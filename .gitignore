@@ -1,0 +1,7 @@
+*__pycache__*
+*.pyc
+*.zip
+/*data
+/all_logs/
+/model_save/
+/images/
