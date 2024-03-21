@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Literal, List
 from typing import Type, Union
-from varyUNet import VaryUNet
 import segmentation_models_pytorch as smp
 
 class DoubleConv(nn.Module):
@@ -22,7 +21,7 @@ class DoubleConv(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class Encoder(nn.Module):
+class UNetEncoder(nn.Module):
     def __init__(self, inc, outc):
         super().__init__()
         layers = [
@@ -36,7 +35,7 @@ class Encoder(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class Decoder(nn.Module):
+class UNetDecoder(nn.Module):
     def __init__(self, inc, outc, kernel_size=(2, 2), step_size=(2, 2)):
         super().__init__()
         self.decoder = nn.ConvTranspose2d(inc, outc, kernel_size, step_size)
@@ -70,11 +69,11 @@ class VaryUNet(nn.Module):
         self.encoders = []
         for i in range(layers):
             self.encoders.append(
-                Encoder(2**i * features, 
+                UNetEncoder(2**i * features, 
                         2**(i+1) * features))
             
             self.decoders.append(
-                Decoder(2**(layers-i) * features , 
+                UNetDecoder(2**(layers-i) * features , 
                         2**(layers-i-1) * features))
 
         # Middle and End layers

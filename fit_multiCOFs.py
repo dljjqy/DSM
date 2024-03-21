@@ -2,16 +2,15 @@ import torch
 import scipy.sparse as sparse
 import numpy as np
 import pandas as pd
-import segmentation_models_pytorch as smp
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from pathlib import Path
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
-from utils import JacIter, PieceWiseConst, my_plot, coo2tensor, L2Loss, mmbv
-import time 
+from utils import PieceWiseConst, coo2tensor, L2Loss
+from BaseTrainer import BaseTrainer
+from MyPlot import multi_cof_draw_img as draw_img
 
-class FvmVaryKDataset(Dataset):
+class C3Ds(Dataset):
     def __init__(self, GridSize, matrix_path, mus, b, device, index_start=0):
         h = 1 / GridSize
         x = np.arange(h/2, 1, h)

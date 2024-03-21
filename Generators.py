@@ -3,10 +3,9 @@ import numpy as np
 import torch.nn as nn
 from utils import mmbv, bvi
 
-class JacFixedB(nn.Module):
-    def __init__(self, A, b, device, dtype):
+class JacBatched(nn.Module):
+    def __init__(self, A,  dtype, device):
         super().__init__()
-
         with torch.no_grad():  
             A = A.coalesce()
             idx = A.indices()
@@ -33,15 +32,10 @@ class JacFixedB(nn.Module):
                 requires_grad=False
                 ) 
             
-            if isinstance(b, np.array):
-                self.b = torch.from_numpy(b)[..., None].to(dtype).to(device)
-            else:
-                self.b = b[..., None].to(dtype).to(device)
-            
             self.dtype = dtype
             self.device = device
 
-    def forward(self, u, maxiter):
+    def forward(self, u, b, maxiter):
         '''
         x: torch.Tensor with shape B x 1 x N x N
         b: torch.Tensor with shape B x N**2
@@ -50,8 +44,8 @@ class JacFixedB(nn.Module):
         with torch.no_grad():
             x = torch.flatten(u, 1, -1)[..., None]
             for _ in range(maxiter):
-                Mx = mmbv(self.M, x)
-                x = mmbv(self.invD, (self.b - Mx)) 
+                Mx = torch.bmm(self.M, x)
+                x = torch.bmm(self.invD, (b - Mx)) 
             x_new = x.reshape(original_shape)
             return x_new.to(self.dtype).to(self.device)
 
@@ -94,8 +88,7 @@ class JacTorch(nn.Module):
         '''
         original_shape = u.shape
         with torch.no_grad():
-            x = torch.flatten(u, 1, -1)[..., None]
-            b = b[..., None]
+            x = torch.flatten(u, 1, -1)
             for _ in range(maxiter):
                 Mx = mmbv(self.M, x)
                 x = mmbv(self.invD, (b - Mx)) 
@@ -124,6 +117,38 @@ class CGTorch(nn.Module):
         for _ in range(max_iters):
             rr = bvi(r, r)
             Ap = mmbv(self.A, p)
+            alpha = rr / bvi(p, Ap)
+            x = x + alpha * p
+            r1 = r - alpha * Ap
+            beta = bvi(r1, r1) / rr
+            p = r1 + beta * p
+            r = r1
+            print(f"error: {r.mean().item():.3e}")
+        return x
+
+
+class CGBatched(nn.Module):
+    def __init__(self, A, device, dtype):
+        super().__init__()
+        with torch.no_grad():
+            self.dtype = dtype
+            self.device = device
+            self.A = A.to(dtype).to(device)
+
+    def forward(self, u, b, maxiter):
+        with torch.no_grad():
+            original_shape = u.shape
+            x = torch.flatten(u, 1, -1)[..., None]
+            y = self.rhs_cg(x, b, maxiter)
+
+        return y.reshape(original_shape)
+
+    def rhs_cg(self, x, b, max_iters=20):
+        r = b - torch.bmm(self.A, x)
+        p = r
+        for _ in range(max_iters):
+            rr = bvi(r, r)
+            Ap = torch.bmm(self.A, p)
             alpha = rr / bvi(p, Ap)
             x = x + alpha * p
             r1 = r - alpha * Ap

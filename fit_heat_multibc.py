@@ -155,7 +155,7 @@ class Trainer(BaseTrainer):
     def reboot(self):
         self.init_traindl()
         self.init_valdl()
-        self.config_optimizer()
+        self.config_optimizer(self.lr)
         self.init_generator()
 
     def gen_mesh(self, area, GridSize):
@@ -313,26 +313,25 @@ class Trainer(BaseTrainer):
         for data, layout, boundary, bd_cases in tqdm(self.val_dl, desc='Validation Loop', leave=False, position=2):
             batch_size = layout.shape[0]
 
-            pre, boundary, real_ans, jac_loss, real_loss = self.val_step(
+            pre, boundary, real_ans, jac_loss_val, real_loss_val = self.val_step(
                 data, layout, boundary, bd_cases, self.maxiter
             )
 
-            jac_loss, real_loss = jac_loss.item(), real_loss.item()
+            real_loss.append(real_loss_val)
+            jac_loss.append(jac_loss_val)
 
-            real_loss.append(real_loss)
-            jac_loss.append(jac_loss)
-
-            self.writer.add_scalar("ValLoss", real_loss, self.val_global_idx)
-            self.writer.add_scalar("ValJacLoss", jac_loss, self.val_global_idx)
+            self.writer.add_scalar("ValLoss", real_loss_val, self.val_global_idx)
+            self.writer.add_scalar("ValJacLoss", jac_loss_val, self.val_global_idx)
 
             pre = pre.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
+            boundary = boundary.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
             ans = real_ans.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
-            layouts = layouts.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
+            layout = layout.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
             
             k = random.choice(range(batch_size))
             fig = draw_img(
                 f"ValFigure",
-                layouts[k],
+                layout[k],
                 boundary[k],
                 pre[k],
                 ans[k],
@@ -353,7 +352,7 @@ if __name__ == "__main__":
     from torch.nn.functional import mse_loss
 
     GridSize = 128
-    mission_name = "multibc_layout_o"
+    mission_name = "heat_multibc"
     tag = "C2Test"
 
     trainer = Trainer(

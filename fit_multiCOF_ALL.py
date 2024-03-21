@@ -1,20 +1,17 @@
 import torch
 import numpy as np
-import json
 
 from utils import coo2tensor
 from MyPlot import multi_cof_draw_img as draw_img
-from Generators import JacTorch
+from Generators import JacBatched, CGBatched
 from BaseTrainer import BaseTrainer
 from scipy.sparse import load_npz
 
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from pathlib import Path
 from torch.utils.data import DataLoader
 
-
-class ThreeChannelDs(Dataset):
+class C3Ds(Dataset):
     def __init__(self, start, DataN, area, GridSize, dtype, device):
         self.start = start
         (left, bottom), (right, top) = area
@@ -49,7 +46,7 @@ class ThreeChannelDs(Dataset):
         data = torch.from_numpy(data).to(self.dtype).to(self.device)
         return data, cof, A, b, u
 
-class OneChannelDs(ThreeChannelDs):
+class C1Ds(C3Ds):
     def __getitem__(self, index):
         cof = np.load(f"{self.path}/c{self.start + index}.npy")
         u = np.load(f"{self.path}/u{self.start + index}.npy")
@@ -96,25 +93,36 @@ class Trainer(BaseTrainer):
     def init_traindl(self):
         self.start = np.random.randint(0, 50000 - self.trainN - self.valN)
         if self.net_kwargs['in_channels'] == 3:
-            train_ds = ThreeChannelDs(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
+            train_ds = C3Ds(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
         elif self.net_kwargs['in_channels'] == 1:
-            train_ds = OneChannelDs(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
+            train_ds = C1Ds(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
             
         self.train_dl = DataLoader(train_ds, self.batch_size)
 
     def init_valdl(self):         
         if self.net_kwargs['in_channels'] == 3:
-            val_ds = ThreeChannelDs(self.start + self.trainN, self.valN, self.area, self.GridSize, self.dtype, self.device) 
+            val_ds = C3Ds(self.start + self.trainN, self.valN, self.area, self.GridSize, self.dtype, self.device) 
         elif self.net_kwargs['in_channels'] == 1:
-            val_ds = OneChannelDs(self.start + self.trainN, self.valN, self.area, self.GridSize, self.dtype, self.device) 
+            val_ds = C1Ds(self.start + self.trainN, self.valN, self.area, self.GridSize, self.dtype, self.device) 
             
         self.val_dl = DataLoader(val_ds, self.batch_size)
+    
+    def init_generator(self, A):
+        match self.method:
+            case 'jac':
+                generator = JacBatched(A, self.dtype, self.device)
+            case 'cg':
+                generator = CGBatched(A, self.dtype, self.device)
+        return generator
 
     def train_step(self, data, A, B, maxiter):
         pre = self.net(data)
         with torch.no_grad():
-            generator = JacTorch(A, self.device, self.dtype)
-            jac_ans = generator(pre, B, maxiter)
+            generator = self.init_generator(A)
+            jac_ans = generator(
+                        torch.clone(torch.detach(pre)), 
+                        B[..., None], maxiter
+                        )
 
         jac_loss = self.loss_fn(jac_ans, pre)
         return jac_loss
@@ -125,63 +133,64 @@ class Trainer(BaseTrainer):
 
             val_real_loss = self.loss_fn(U, pre)
             
-            generator = JacTorch(A, self.device, self.dtype)
-            jac_ans = generator(pre, B, maxiter)
+            generator = self.init_generator(A)
+            jac_ans = generator(pre, B[..., None], maxiter)
 
             val_jac_loss = self.loss_fn(jac_ans, pre)
 
-        return pre, val_real_loss, val_jac_loss 
+        return pre, val_real_loss.item(), val_jac_loss.item() 
 
     def train_loop(self):
         self.net.train()
         loss_vals = []
-        with tqdm(total=len(self.train_dl), position=0) as train_bar:
-            for data, cofs, A, B, U in self.train_dl:
-                loss_val = self.train_step(data, A, B, self.maxiter)
-                self.writer.add_scalar("TrainJacLoss", loss_val.item(), self.train_global_idx)
 
-                loss_val.backward()
-                self.optimizer.step()
-                self.optimizer.zero_grad()
+        for data, cofs, A, B, U in tqdm(self.train_dl, desc='Training Loop:', position=1, leave=False):
+            loss = self.train_step(data, A, B, self.maxiter)
+            
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+        
+            loss_val = loss.item()
+            self.writer.add_scalar("TrainJacLoss", loss_val, self.train_global_idx)
+            self.train_global_idx += 1
 
-                loss_vals.append(loss_val.item())
-                self.train_global_idx += 1
-                train_bar.update(1)
-
+            loss_vals.append(loss_val)
         return np.array(loss_vals).mean()
     
     def val_loop(self):
         self.net.eval()
-        loss_vals = []
-        jac_loss_vals = []
+        loss_vals, jac_loss_vals = [], []
 
-        with tqdm(total=len(self.val_dl), position=0) as val_bar:
-            for data, cofs, A, B, U in self.val_dl:
-                batch_size = U.shape[0]
-                pre, jac_loss_val, loss_val = self.val_step(data, A, B, U, self.maxiter)
+        for data, cofs, A, B, U in tqdm(self.val_dl, desc='Validation Loop:', position=2, leave=False):
+            batch_size = U.shape[0]
+            pre, jac_loss_val, loss_val = self.val_step(data, A, B, U, self.maxiter)
 
-                loss_vals.append(loss_val.item())
-                jac_loss_vals.append(jac_loss_val.item())
+            loss_vals.append(loss_val)
+            jac_loss_vals.append(jac_loss_val)
 
-                self.writer.add_scalar("ValLoss", loss_val, self.val_global_idx)
-                self.writer.add_scalar("ValJacLoss", jac_loss_val, self.val_global_idx)
-                self.val_global_idx += 1
-                val_bar.update(1)
+            self.writer.add_scalar("ValLoss", loss_val, self.val_global_idx)
+            self.writer.add_scalar("ValJacLoss", jac_loss_val, self.val_global_idx)
 
-                pre = pre.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
-                sols = U.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
-                cofs = cofs.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
+            pre = pre.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
+            sols = U.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
+            cofs = cofs.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
 
-                k = np.random.choice(batch_size)
-                fig = draw_img('Validation', pre[k], sols[k], cofs[k], self.GridSize, a=1)
-                self.writer.add_figure("ValFigure", fig, self.val_global_idx)
+            k = np.random.choice(batch_size)
+            fig = draw_img('Validation', pre[k], sols[k], cofs[k], self.GridSize, a=1)
+            self.writer.add_figure(f"ValFigure", fig, self.val_global_idx)
+
+            self.val_global_idx += 1
 
         return np.array(loss_vals).mean(), np.array(jac_loss_vals).mean()
 
 if __name__ == '__main__':
     # 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'
+    # GridSize = 192
     GridSize = 96
     mission_name = 'allcofs'
+    tag = 'BACK'
+
     trainer = Trainer(
         area = ((0, 0), (1, 1)),
         GridSize=GridSize,
@@ -204,15 +213,15 @@ if __name__ == '__main__':
         },
         batch_size=20,
         method='jac',
-        maxiter=15,
+        maxiter=20,
         log_dir=f'./all_logs/{mission_name}',
         lr=1e-3,
         loss_fn=torch.nn.functional.mse_loss,
         model_save_path=f'./model_save/{mission_name}',
-        tag = 'ok',
-        total_epochs=[200, 200, 200],
+        tag = tag,
+        total_epochs=[150, 150],
         device='cuda',
-        dtype=torch.double,
+        dtype=torch.float,
         hyper_params_save_path=f'./hyper_parameters/{mission_name}'
     )
     trainer.fit_loop()

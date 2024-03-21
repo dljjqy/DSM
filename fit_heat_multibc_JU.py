@@ -7,7 +7,7 @@ from scipy.sparse.linalg import spsolve
 from MyPlot import multi_heat_draw_img as draw_img
 from utils import L2Loss, coo2tensor
 from BaseTrainer import BaseTrainer
-from Generators import JacTorch
+from Generators import JacBatched, CGBatched
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader, Dataset
@@ -144,7 +144,7 @@ class Trainer(BaseTrainer):
         self.method = method
         self.maxiter = maxiter
         self.max_subiter_steps = max_subiter_steps
-        self.subiter_eps = subiter_eps
+        self.eps = subiter_eps
         super().__init__(*args, **kwargs)
 
         (left, bottom), (right, top) = self.area
@@ -153,8 +153,9 @@ class Trainer(BaseTrainer):
 
 
         self.l2_loss = L2Loss(self.dx)
-        self.init_generator()
         self.global_subiter_idx = 0
+
+        self.init_linearsys()
 
     @property
     def name(self):
@@ -177,26 +178,33 @@ class Trainer(BaseTrainer):
         }
         return param
     
-    def init_generator(self):
-        self.generators = []
+    def init_linearsys(self):
+        self.Anp = []
+        self.Atorch = []
         self.B = []
-        self.A = []
-        
+
         for bd_case in [0, 1, 2]:
             A_np = load_npz(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
+            self.Anp.append(A_np)
             
+            A_torch = coo2tensor(A_np.tocoo(), self.device, self.dtype)
+            self.Atorch.append(A_torch)
+
             b = np.load(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
-
-            A = coo2tensor(A_np.tocoo(), self.device, self.dtype)
             b = torch.from_numpy(b).to(self.dtype).to(self.device)
-
-            self.A.append(A_np)
             self.B.append(b)
-
-            self.generators.append(JacTorch(A[None, ...], self.device, self.dtype))
         
         self.B = torch.stack(self.B)
 
+    def init_generator(self, bd_cases):
+        batched_A = []
+        for c in bd_cases:
+            c = c.item()
+            batched_A.append(torch.clone(torch.detach(self.Atorch[c])))
+        batched_A = torch.stack(batched_A)
+        generator = JacBatched(batched_A, self.dtype, self.device)
+        return generator
+        
     def init_traindl(self):
         all_layouts = np.load(f'./DLdata/heat/GridSize-{self.GridSize}/F.npy')
         all_layouts = torch.from_numpy(all_layouts[self.data_start_index: self.data_start_index + self.trainN + self.valN])
@@ -226,100 +234,94 @@ class Trainer(BaseTrainer):
         )
 
     def train_step(self, data, layouts, bd_cases, maxiter):
-        for _ in tqdm(range(self.max_subiter_steps), desc='Sub-Iteration:', position=2, leave=False):
-            pre = self.net(data)
+        batch_size = layouts.shape[0]
 
-            # Generate the label by Jac
+        # First, we need generator and B
+        generator = self.init_generator(bd_cases)
+        B = layouts.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
+
+        for _ in tqdm(range(self.max_subiter_steps), desc='One Step Loop:', position=2, leave=False):
+            old_pre = self.net(data)
             with torch.no_grad():
-                label = []
-                for i, bd_case in enumerate(bd_cases):
-                    bd_case = bd_case.item()
-                    b = layouts[i].reshape(-1) * self.dx * self.dy + self.B[bd_case]
-
-                    generator = self.generators[bd_case]
-                    label.append(generator(pre[i], b[None, ...], maxiter))
-                    
-                label = torch.stack(label, dim=0).to(self.dtype).to(self.device)
-
+                label = generator(
+                    torch.clone(torch.detach(old_pre)),
+                    B[..., None], maxiter
+                )
             # Compute MSE
-            loss = self.loss_fn(pre, label)
+            loss = self.loss_fn(old_pre, label)
+            
+            # Backpropagation
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
+            loss_val = loss.item()
+            new_pre = self.net(data)
+            error = self.l2_loss(new_pre, old_pre).item()
+
+            self.writer.add_scalar("TrainSubiterLoss", loss_val, self.global_subiter_idx)
+            self.writer.add_scalar("TrainSubiterError", error, self.global_subiter_idx)
             self.global_subiter_idx += 1
-            self.writer.add_scalar(
-                "TrainSubiterLoss", loss.item(), self.global_subiter_idx
-            )
 
-            subiter_error = self.l2_loss(pre, label)
-            self.writer.add_scalar(
-                "TrainSubiterError", subiter_error.item(), self.global_subiter_idx
-            )
-
-            if subiter_error <= self.subiter_eps:
+            if error <= self.eps:
                 break
-        return loss
+            else:
+                old_pre = new_pre
+
+        return error, loss_val
 
     def val_step(self, data, layouts, boundaries, bd_cases, maxiter):
-        jac_ans = []
-        real_ans = []
-
+        batch_size = layouts.shape[0]
         pre = self.net(data)
 
-        for i, bd_case in enumerate(bd_cases):
-            bd_case = bd_case.item()
-            b = layouts[i].reshape(-1) * self.dx * self.dy + self.B[bd_case]
+        # First, we need generator and B
+        generator = self.init_generator(bd_cases)
+        B = layouts.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
 
-            generator = self.generators[bd_case]
-            jac_ans.append(generator(pre[i], b[None, ...], maxiter))
+        jac_ans = generator(
+            pre, B, maxiter
+        )
+        
+        # Assemble real answer byu spsolve
+        real_ans = []
+        for i, bd_case in enumerate(bd_cases):
+            b = B[i]
             real_ans.append(
-                spsolve(self.A[bd_case], b.cpu().numpy()).reshape(1, self.GridSize, self.GridSize)
-            )
-            
-        jac_ans = torch.stack(jac_ans, dim=0).to(self.dtype).to(self.device)
+                spsolve(self.Anp[bd_case], b.cpu().numpy()).reshape(1, self.GridSize, self.GridSize)
+            )            
         real_ans = torch.from_numpy(np.stack(real_ans)).to(self.dtype).to(self.device)
 
         val_jac_loss = self.loss_fn(jac_ans, pre)
         val_real_loss = self.loss_fn(real_ans, pre)
 
-        return pre, layouts, boundaries, real_ans, val_jac_loss, val_real_loss
+        return pre, layouts, boundaries, real_ans, val_jac_loss.item(), val_real_loss.item()
 
     def train_loop(self):
         self.net.train()
         loss_vals = []
         for data, layouts, boundaries, bd_cases in tqdm(self.train_dl, position=1, leave=False):
-            loss_val = self.train_step(data, layouts, bd_cases, self.maxiter)
-            loss_vals.append(loss_val.item())
+            error, loss_val = self.train_step(data, layouts, bd_cases, self.maxiter)
+            loss_vals.append(loss_val)
 
-            loss = np.array(loss_vals).mean()
-
-        self.train_global_idx += 1
-        self.writer.add_scalar(
-                "TrainLoss", loss, self.train_global_idx
-            )
         return np.array(loss_vals).mean()
             
     def val_loop(self):
         self.net.eval()
-        jac_loss_vals = []
-        real_loss_vals = []
+        real_loss_vals, jac_loss_vals = [], []
 
         for data, layouts, boundaries, bd_cases in tqdm(self.val_dl, position=1, leave=False):
             batch_size = len(bd_cases)
-            pre, layouts, boundaries, real_ans, jac_loss, real_loss = self.val_step(
+            pre, layouts, boundaries, real_ans, jac_loss_val, real_loss_val = self.val_step(
                 data, layouts, boundaries, bd_cases, self.maxiter
             )
-            self.val_global_idx += 1
-
-            jac_loss, real_loss = jac_loss.item(), real_loss.item()
-
-            real_loss_vals.append(real_loss)
-            jac_loss_vals.append(jac_loss)
+            real_loss_vals.append(real_loss_val)
+            jac_loss_vals.append(jac_loss_val)
 
             self.val_plot(batch_size, pre, real_ans, layouts, boundaries)
-            self.writer.add_scalar("ValLoss", real_loss, self.val_global_idx)
-            self.writer.add_scalar("ValJacLoss", jac_loss, self.val_global_idx)
+            self.writer.add_scalar("ValLoss", real_loss_val, self.val_global_idx)
+            self.writer.add_scalar("ValJacLoss", jac_loss_val, self.val_global_idx)
+
+            self.val_global_idx += 1
 
         return np.array(real_loss_vals).mean(), np.array(jac_loss_vals).mean()
 
@@ -344,13 +346,14 @@ class Trainer(BaseTrainer):
 if __name__ == "__main__":
     from SegModel import *
     GridSize = 128
-    mission_name = "multibc_heat"
-
+    mission_name = "heat_multibc"
+    tag="Ju"
+    
     trainer = Trainer(
         method="jac",
         maxiter=10,
         max_subiter_steps=600,
-        subiter_eps=1e-7,
+        subiter_eps=1e-8,
         dtype=torch.float,
         device="cuda",
         area=((0, 0), (0.1, 0.1)),
@@ -370,7 +373,7 @@ if __name__ == "__main__":
         log_dir=f"./all_logs/{mission_name}",
         lr=1e-3,
         total_epochs=[200, 200],
-        tag="Ju",
+        tag=tag,
         loss_fn=nn.functional.mse_loss,
         model_save_path=f"./model_save/{mission_name}",
         hyper_params_save_path=f"./hyper_parameters/{mission_name}",

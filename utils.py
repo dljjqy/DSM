@@ -115,7 +115,7 @@ def bvi(x, y):
     """
     inner product of Batched vectors x and y
     """
-    b, n = x.shape
+    b, n = x.shape[:2]
     inner_values =  torch.bmm(x.view((b, 1, n)), y.view((b, n, 1))) 
     return inner_values.reshape(b, 1)
 

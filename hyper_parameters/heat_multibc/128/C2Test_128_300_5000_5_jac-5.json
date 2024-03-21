@@ -1,0 +1,49 @@
+{
+    "GridSize": 128,
+    "area": [
+        [
+            0,
+            0
+        ],
+        [
+            0.1,
+            0.1
+        ]
+    ],
+    "trainN": 5000,
+    "valN": 10,
+    "Batch_size": 5,
+    "lr": 0.001,
+    "epochs": [
+        150,
+        150
+    ],
+    "tag": "C2Test",
+    "net_kwargs": {
+        "model_name": "segmodel",
+        "Block": "ResBasic",
+        "planes": 8,
+        "in_channels": 2,
+        "classes": 1,
+        "GridSize": 128,
+        "layer_nums": [
+            2,
+            2,
+            4,
+            6,
+            8
+        ],
+        "adaptor_nums": [
+            2,
+            2,
+            4,
+            6,
+            8
+        ],
+        "factor": 2,
+        "norm_method": "layer",
+        "pool_method": "max",
+        "padding": "same",
+        "padding_mode": "replicate"
+    }
+}
