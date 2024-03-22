@@ -8,7 +8,7 @@ def kappa(u, mu):
 def kappa_water(u, mu):
     return u + mu
 
-def force(x, y, center, delta):
+def force(x, y, center, delta=0.05):
     px, py = center
     mask = (x > px-delta) * (x <= px+delta) * (y > py-delta) * (y <= py+delta)
     force = 100 * np.exp(-50 * ((x - px)**2 + (y - py)**2))

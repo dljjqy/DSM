@@ -51,9 +51,9 @@ class BaseTrainer:
         self.train_global_idx = 0
         self.val_global_idx = 0
         self.global_epoch_idx=0
-        self.best_train_loss = torch.inf
+        self.best_train_error = torch.inf
         self.best_val_real_loss = torch.inf
-        self.best_val_subitr_loss = torch.inf
+        self.best_val_error = torch.inf
 
         self.save_hyper_parameters()
         self.init_tensorboard()
@@ -84,8 +84,9 @@ class BaseTrainer:
         self.writer = SummaryWriter(log_dir=f'{self.log_dir}/{self.name}', comment="Test")
 
     def init_network(self, kwargs):
-        name = kwargs.pop('model_name')
-        self.net = CNN(name, kwargs, self.dtype, self.device)
+        net_kwargs = kwargs.copy()
+        name = net_kwargs.pop('model_name')
+        self.net = CNN(name, net_kwargs, self.dtype, self.device)
 
     def config_optimizer(self, lr):
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
@@ -93,9 +94,10 @@ class BaseTrainer:
         self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
 
     def reboot(self):
-        self.init_traindl()
-        self.init_valdl()
-        self.config_optimizer(self.lr)
+        pass
+
+    def epoch_reboot(self):
+        pass
 
     def init_traindl(self):
         pass
@@ -115,10 +117,10 @@ class BaseTrainer:
     def val_loop(self):
         pass
 
-    def save_best_train(self, new_train_loss):
-        if new_train_loss <= self.best_train_loss:
-            self.best_train_loss = new_train_loss
-            print(f"\nEpoch {self.global_epoch_idx} Best train loss: {self.best_train_loss:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
+    def save_best_train_error(self, new_train_error):
+        if new_train_error <= self.best_train_error:
+            self.best_train_error = new_train_error
+            print(f"\nEpoch {self.global_epoch_idx} Best train loss: {self.best_train_error:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
             torch.save(self.net.state_dict(), f'{self.model_save_path}/best_train.pt')
     
     def save_best_val_real(self, new_val_real_loss):
@@ -127,10 +129,10 @@ class BaseTrainer:
             print(f"\nEpoch {self.global_epoch_idx} Best validation  Real loss: {self.best_val_real_loss:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
             torch.save(self.net.state_dict(), f'{self.model_save_path}/best_val.pt')
     
-    def save_best_val_subitr(self, new_val_subitr_loss):
-        if new_val_subitr_loss <= self.best_val_subitr_loss:
-            self.best_val_subitr_loss = new_val_subitr_loss
-            print(f"\nEpoch {self.global_epoch_idx} Best validation subitr loss: {self.best_val_subitr_loss:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
+    def save_best_val_error(self, new_val_error):
+        if new_val_error <= self.best_val_error:
+            self.best_val_error = new_val_error
+            print(f"\nEpoch {self.global_epoch_idx} Best validation subitr loss: {self.best_val_error:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
             torch.save(self.net.state_dict(), f'{self.model_save_path}/best_val_itr.pt')
 
     def fit_loop(self):
@@ -138,16 +140,19 @@ class BaseTrainer:
             self.reboot()
 
             for _ in tqdm(range(epoch_num), desc='Training Epoch:', leave=True):
-                new_train_loss = self.train_loop()
+                self.epoch_reboot()
+
+                new_train_error = self.train_loop()
                 with torch.no_grad():
-                    new_val_real_loss, new_val_subitr_loss = self.val_loop()
+                    new_val_real_loss, new_val_error = self.val_loop()
 
                 self.lr_scheduler.step()
                 self.global_epoch_idx += 1
                 torch.save(self.net.state_dict(), f'{self.model_save_path}/last.pt')
                 
-                self.save_best_train(new_train_loss)
+                self.save_best_train_error(new_train_error)
                 self.save_best_val_real(new_val_real_loss)
-                self.save_best_val_subitr(new_val_subitr_loss)
+                self.save_best_val_error(new_val_error)
+
 
     

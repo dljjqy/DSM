@@ -158,9 +158,9 @@ def multi_heat_draw_img(name, f, boundary, pre, ans, GridSize, a=0.1, levels=Non
     fig.tight_layout()
     return fig
 
-def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=0.1, levels=None):
+def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=1, levels=None):
     fig = plt.figure()
-    fig.suptitle(name, fontsize=20)
+    fig.suptitle(f"{name}-{mu:.3e}", fontsize=20)
     fig.set_figheight(20)
     fig.set_figwidth(20)
 

@@ -1,16 +1,12 @@
 import numpy as np
 import pandas as pd
-import multiprocessing as mp
 from tqdm import tqdm
 from pathlib import Path
-from delta import normal
 from FVM.src.utils import readmesh, ChipLayout, PieceWiseConst
 from FVM.src.ICD import VolumnCenteredScheme
 from FVM.src.Problem import *
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
-import time
-
 
 chips = [
     [0.016, 0.012, 4000], [0.012, 0.006, 16000], [0.018, 0.009, 6000], [0.018, 0.012, 8000],

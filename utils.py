@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import scipy.sparse as sparse
 from scipy.sparse.linalg import spsolve
 import numpy as np
@@ -12,6 +13,10 @@ from FVM.src.Problem import *
 
 import numpy as np
 from scipy.stats import multivariate_normal
+
+def hard_encode(x, gd):
+    y = F.pad(x, (1, 1, 1, 1), 'constant', value=gd)
+    return y
 
 def worker(task_id, area, GridSize, boundary_gap, chip_gap):
     try:

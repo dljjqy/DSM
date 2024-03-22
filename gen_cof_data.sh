@@ -12,10 +12,10 @@ python gen_allcofs_data.py --start 22500 --dataN 2500 --GridSize 192 &
 python gen_allcofs_data.py --start 25000 --dataN 2500 --GridSize 192 &
 python gen_allcofs_data.py --start 27500 --dataN 2500 --GridSize 192 
 
-python gen_allcofs_data.py --start 30000 --dataN 2500 --GridSize 192 &
-python gen_allcofs_data.py --start 32500 --dataN 2500 --GridSize 192 &
-python gen_allcofs_data.py --start 35000 --dataN 2500 --GridSize 192 &
-python gen_allcofs_data.py --start 37500 --dataN 2500 --GridSize 192 
+# python gen_allcofs_data.py --start 30000 --dataN 2500 --GridSize 192 &
+# python gen_allcofs_data.py --start 32500 --dataN 2500 --GridSize 192 &
+# python gen_allcofs_data.py --start 35000 --dataN 2500 --GridSize 192 &
+# python gen_allcofs_data.py --start 37500 --dataN 2500 --GridSize 192 
 
 # python gen_allcofs_data.py --start 40000 --dataN 2500 --GridSize 192 &
 # python gen_allcofs_data.py --start 42500 --dataN 2500 --GridSize 192 &

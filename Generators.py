@@ -1,7 +1,116 @@
 import torch
-import numpy as np
 import torch.nn as nn
-from utils import mmbv, bvi
+import torch.nn.functional as F
+from utils import mmbv, bvi, hard_encode, kappa
+
+class LinearMonitor(nn.Module):
+    def __init__(self, A, dtype, device):
+        super().__init__()
+        self.A = A.to(dtype).to(device)
+
+    def forward(self, pre, B):
+        u = torch.flatten(pre, 1, -1)[..., None]
+        Au = mmbv(self.A, u)
+        errors = torch.sum((Au - B)**2, dim=0)
+
+        return errors.mean() 
+
+class BatchedMonitor(nn.Module):
+    def __init__(self, A, dtype, device):
+        super().__init__()
+        self.A = A.to(dtype).to(device)
+
+    def forward(self, pre, B):
+        u = torch.flatten(pre, 1, -1)[..., None]
+        Au = torch.bmm(self.A, u)
+        errors = torch.sum((Au - B)**2, dim=0)
+        return errors.mean()
+
+class PinnGenerator(torch.nn.Module):
+    def __init__(self, GridSize, device, maxiter, area, prev_net=None, gd=0):
+        super().__init__()
+        self.GridSize = GridSize
+        (left, bottom), (right, top) = area
+        self.h = (right - left) / (GridSize - 1)
+        self.device = device
+        self.maxiter = maxiter
+        self.gd = gd
+
+        self.k1 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
+        self.k2 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
+        self.k3 = self._get_kernel([[0, 0.5, 0], [0.5, 2, 0.5], [0, 0.5, 0]])
+
+        self.prev_net = prev_net
+
+        self.hard_encode = lambda x: hard_encode(x, self.gd)
+
+    def _get_kernel(self, k):
+        k = torch.tensor(k, requires_grad=True)
+        k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).float().to(self.device)
+        return k
+
+    def jac_step(self, x, pre, f, mu):
+        u = self.hard_encode(pre)
+        if self.prev_net is None:
+            w = torch.ones_like(f, requires_grad=False)
+        else:
+            w = self.hard_encode(self.prev_net(x))
+        
+        w = kappa(w, mu)
+        force = f[..., 1:-1, 1:-1] * self.h**2
+        y1 = F.conv2d(u, self.k1) * w[..., 1: -1, 1: -1]        
+        y2 = F.conv2d(w * u, self.k2)
+        y3 = F.conv2d(w, self.k3)
+        return (force + y1 + y2) / y3
+    
+    def forward(self, x, pre, f, mu):
+        with torch.no_grad():
+            y = self.jac_step(x, pre, f, mu)
+            for _ in range(self.maxiter):
+                y = self.jac_step(x, y, f, mu)
+        return y
+
+class PinnGenerator_Ju(torch.nn.Module):
+    def __init__(self, batch_size, GridSize, dtype, device, maxiter, area, init_kappa=None, mu=0.1, gd=0):
+        super().__init__()
+        self.batch_size = batch_size
+        self.GridSize = GridSize
+        (left, bottom), (right, top) = area
+        self.h = (right - left) / (GridSize - 1)
+        self.dtype = dtype
+        self.device = device
+        self.maxiter = maxiter
+        self.mu = mu
+        self.gd = gd
+        self.hard_encode = lambda x: hard_encode(x, self.gd)
+        
+        self.k1 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
+        self.k2 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
+        self.k3 = self._get_kernel([[0, 0.5, 0], [0.5, 2, 0.5], [0, 0.5, 0]])
+
+        self.w = init_kappa
+
+    def _get_kernel(self, k):
+        k = torch.tensor(k, requires_grad=True)
+        k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).to(self.dtype).to(self.device)
+        return k
+    
+    def jac_step(self, pre, f):
+        u = self.hard_encode(pre)
+        w = kappa(self.w, self.mu)
+        
+        force = f[..., 1:-1, 1:-1] * self.h**2
+        y1 = F.conv2d(u, self.k1) * w[..., 1: -1, 1: -1]        
+        y2 = F.conv2d(w * u, self.k2)
+        y3 = F.conv2d(w, self.k3)
+        return (force + y1 + y2) / y3
+    
+    def forward(self, pre, f):
+        with torch.no_grad():
+            y = self.jac_step(pre, f)
+            for _ in range(self.maxiter):
+                y = self.jac_step(y, f)
+        return y
 
 class JacBatched(nn.Module):
     def __init__(self, A,  dtype, device):
