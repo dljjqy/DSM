@@ -1,0 +1,51 @@
+{
+    "GridSize": 128,
+    "method": "jac",
+    "maxiter": 15,
+    "area": [
+        [
+            0,
+            0
+        ],
+        [
+            0.1,
+            0.1
+        ]
+    ],
+    "trainN": 10000,
+    "valN": 10,
+    "Batch_size": 5,
+    "lr": 0.001,
+    "epochs": [
+        180
+    ],
+    "tag": "JJQC5",
+    "net_kwargs": {
+        "model_name": "segmodel",
+        "Block": "ResBottleNeck",
+        "planes": 8,
+        "in_channels": 2,
+        "classes": 1,
+        "GridSize": 128,
+        "layer_nums": [
+            2,
+            4,
+            4,
+            6,
+            8
+        ],
+        "adaptor_nums": [
+            2,
+            4,
+            4,
+            6,
+            8
+        ],
+        "factor": 2,
+        "norm_method": "layer",
+        "pool_method": "max",
+        "padding": "same",
+        "padding_mode": "replicate",
+        "end_padding_mode": "replicate"
+    }
+}

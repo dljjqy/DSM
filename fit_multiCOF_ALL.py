@@ -28,6 +28,7 @@ class Trainer(BaseTrainer):
         self.init_traindl()
         self.init_valdl()
         self.config_optimizer(self.lr)
+        # self.method = 'cg'
 
     def epoch_reboot(self):
         pass
@@ -79,7 +80,6 @@ class Trainer(BaseTrainer):
         # Get the generator and monitor
         generator, monitor = self.init_generator_monitor(A)
         
-
         # Do prediction
         pre = self.net(data)
 
@@ -169,17 +169,17 @@ if __name__ == '__main__':
         area = ((0, 0), (1, 1)),
         GridSize=GridSize,
         trainN=10000,
-        valN=10,
-        batch_size=20,
+        valN=50,
+        batch_size=5,
         net_kwargs={
             'model_name': 'segmodel',
-            'Block': "ResBasic",
+            'Block': "ResBottleNeck",
             'planes':6,
             'in_channels':1,
             'classes':1,
             'GridSize':GridSize,
-            'layer_nums':[4, 6, 6, 8, 8],
-            'adaptor_nums':[4, 6, 6, 8, 8],
+            'layer_nums':   [4, 6, 6, 8, 8],
+            'adaptor_nums': [4, 6, 6, 8, 8],
             'factor':2,
             'norm_method': 'layer',
             'pool_method':'max',
@@ -191,7 +191,7 @@ if __name__ == '__main__':
         loss_fn=torch.nn.functional.mse_loss,
         model_save_path=f'./model_save/{mission_name}',
         tag = tag,
-        total_epochs=[150, 150],
+        total_epochs=[150],
         device='cuda',
         dtype=torch.float,
         hyper_params_save_path=f'./hyper_parameters/{mission_name}'

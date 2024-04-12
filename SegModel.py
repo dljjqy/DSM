@@ -310,13 +310,24 @@ class OutputHeader(nn.Module):
         padding_mode='reflect'):
         super().__init__()
         
+        self.conv =  nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=in_channels,
+            kernel_size=3,
+            padding=padding,
+            padding_mode=padding_mode
+        )
+        self.act = nn.ReLU()
+
         self.header = nn.Conv2d(
             in_channels=in_channels,
             out_channels=classes,
-            kernel_size=1
+            kernel_size=1,
         )
         
     def forward(self, x):
+        x = self.conv(x)
+        x = self.act(x)
         out = self.header(x)
         return out
 
@@ -545,7 +556,9 @@ class SegModel(nn.Module):
         norm_method: Literal['batch', 'layer'],
         pool_method: Literal['max', 'avg'],
         padding='same',
+        end_padding='same',
         padding_mode='reflect',
+        end_padding_mode = 'reflect',
         center=True,
         ):
         super().__init__()
@@ -618,8 +631,8 @@ class SegModel(nn.Module):
         self.output_header = OutputHeader(
             in_channels=planes,
             classes=classes,
-            padding=padding,
-            padding_mode=padding_mode
+            padding=end_padding,
+            padding_mode=end_padding_mode
         )
     
     @property

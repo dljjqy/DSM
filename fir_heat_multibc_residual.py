@@ -39,10 +39,14 @@ class Trainer(BaseTrainer):
     def reboot(self):
         self.config_optimizer(self.lr)
         self.init_generator_monitor()
+        # self.init_traindl()
+        # self.init_valdl()
 
     def epoch_reboot(self):
+        # if self.global_epoch_idx % 50 == 0:
         self.init_traindl()
         self.init_valdl()
+        pass
 
     def gen_mesh(self, area, GridSize):
         (self.left, self.bottom), (self.right, self.top) = area
@@ -106,27 +110,16 @@ class Trainer(BaseTrainer):
         
         self.B = torch.stack(self.B)
     
-    def init_generator_monitor(self,):
-        self.generator = []
-        self.monitor = []
+    def init_monitor(self, bd_cases):
+        with torch.no_grad():
+            batched_A = []
+            for c in bd_cases:
+                c = c.item()
+                batched_A.append(self.Atorch[c])
+            batched_A = torch.stack(batched_A)
 
-        for bd_case in [0, 1, 2]:
-            self.generator.append(
-                JacTorch(self.Atorch[bd_case], self.device, self.dtype)
-            )    
-            self.monitor.append(
-                LinearMonitor(self.Atorch[bd_case], self.dtype, self.device)
-            )
-
-    # def init_generator_monitor(self, bd_cases):
-    #     batched_A = []
-    #     for c in bd_cases:
-    #         c = c.item()
-    #         batched_A.append(torch.clone(torch.detach(self.Atorch[c])))
-    #     batched_A = torch.stack(batched_A)
-    #     generator = JacBatched(batched_A, self.dtype, self.device)
-    #     monitor = BatchedMonitor(batched_A, self.dtype, self.device)
-    #     return generator, monitor
+            monitor = BatchedMonitor(batched_A, self.dtype, self.device)
+            return monitor
 
     def init_traindl(self):
         layouts = self.gen_layouts(self.trainN)
@@ -156,7 +149,7 @@ class Trainer(BaseTrainer):
         batch_size = layouts.shape[0]
         
         # First, we need generator and B
-        generator, monitor = self.init_generator_monitor(bd_cases)
+        monitor = self.init_generator_monitor(bd_cases)
         B = layouts.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
         B = B[..., None]
         
@@ -164,26 +157,7 @@ class Trainer(BaseTrainer):
         pre = self.net(data)
 
         # Generate the label by Jac
-        with torch.no_grad():
-            label = generator(
-                    torch.clone(torch.detach(pre)),
-                    B, maxiter
-                )
-            error = monitor(pre, B).item()
-
-        # with torch.no_grad():
-        #     labels, errors = [], []
-        #     for i in range(batch_size):
-        #         labels.append(
-        #             self.generator[i](pre[i], B[i], maxiter)
-        #             )
-        #         errors.append(
-        #             self.monitor[i](pre[i], B[i]).item()
-        #         )
-        #     label = torch.stack(labels)
-        #     error = np.array(errors).mean()
-        # Compute MSE
-        loss = self.loss_fn(pre, label)
+        loss = monitor(pre, B).item()
         
         # Backpropagation
         self.optimizer.zero_grad()
@@ -191,37 +165,24 @@ class Trainer(BaseTrainer):
         self.optimizer.step()
 
         loss_val = loss.item()
-        self.writer.add_scalar("Train-PinnLoss", loss_val, self.train_global_idx)
-        self.writer.add_scalar("Train-Error", error, self.train_global_idx)
+        self.writer.add_scalar("Train-ResidualLoss", loss_val, self.train_global_idx)
+        # self.writer.add_scalar("Train-Error", error, self.train_global_idx)
         self.train_global_idx += 1
 
-        return error, loss_val
+        return loss_val
 
     def val_step(self, data, layout, boundary, bd_cases, maxiter):
         batch_size = layout.shape[0]
 
         # Get generator and monitor
-        generator, monitor = self.init_generator_monitor(bd_cases)
+        monitor = self.init_generator_monitor(bd_cases)
         B = layout.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
         B = B[..., None]
 
         # Prediction
         pre = self.net(data)
+        loss_val = monitor(pre, B).item()
 
-        # Compute the label and error
-        subiter_ans = generator(pre, B, maxiter)
-        
-        # with torch.no_grad():
-        #     labels, errors = [], []
-        #     for i in range(batch_size):
-        #         labels.append(
-        #             self.generator[i](pre[i], B[i], maxiter)
-        #             )
-        #         errors.append(
-        #             self.monitor[i](pre[i], B[i]).item()
-        #         )
-        #     subiter_ans = torch.stack(labels)
-        #     error = np.array(errors).mean()
         # # Get Real ans
         real_ans = []
         for i, bd_case in enumerate(bd_cases):
@@ -230,26 +191,22 @@ class Trainer(BaseTrainer):
             real_ans.append(ans.reshape(1, self.GridSize, self.GridSize))
 
         real_ans = torch.from_numpy(np.stack(real_ans)).to(self.dtype).to(self.device)
-
-        val_pinn_loss = self.loss_fn(subiter_ans, pre).item()
         val_real_loss = self.loss_fn(real_ans, pre).item()
-        error = monitor(pre, B).item()
 
-        self.writer.add_scalar("Val-Error", error, self.val_global_idx)
+        self.writer.add_scalar("Val-Residual", loss_val, self.val_global_idx)
         self.writer.add_scalar("Val-RealLoss", val_real_loss, self.val_global_idx)
-        self.writer.add_scalar("Val-PinnLoss", val_pinn_loss, self.val_global_idx)
         self.val_plot(batch_size, pre, real_ans, layout, boundary)
 
         self.val_global_idx += 1
 
-        return error, val_pinn_loss, val_real_loss
+        return loss_val, val_real_loss
 
     def train_loop(self):
         self.net.train()
         
         errors = []
         for data, layouts, _, bd_cases in tqdm(self.train_dl, desc='Training Loop:', leave=False, position=1):
-            error, loss_val = self.train_step(data, layouts, bd_cases, self.maxiter)
+            error = self.train_step(data, layouts, bd_cases, self.maxiter)
             errors.append(error)
         
         self.lr_scheduler.step()
@@ -259,17 +216,16 @@ class Trainer(BaseTrainer):
     def val_loop(self):
         self.net.eval()
 
-        errors, pinn_loss, real_loss = [], [], []       
+        errors, real_loss =  [], []       
         for data, layout, boundary, bd_cases in tqdm(self.val_dl, desc='Validation Loop', leave=False, position=2):
 
-            error, val_pinn_loss, val_real_loss = self.val_step(
+            error,  val_real_loss = self.val_step(
                 data, layout, boundary, bd_cases, self.maxiter
             )
 
             errors.append(error)
             real_loss.append(val_real_loss)
-            pinn_loss.append(val_pinn_loss)
-
+            
         return np.array(real_loss).mean(), np.array(errors).mean()
     
 
@@ -294,10 +250,9 @@ class Trainer(BaseTrainer):
 
 if __name__ == "__main__":
     from torch.nn.functional import mse_loss
-
-    GridSize = 256
+    GridSize = 128
     mission_name = "heat_multibc"
-    tag = "JJQC2ReSample"
+    tag = "ResidualC2"
 
     trainer = Trainer(
         method="jac",
@@ -317,8 +272,8 @@ if __name__ == "__main__":
             "in_channels": 2,
             "classes": 1,
             "GridSize": GridSize,
-            "layer_nums": [2, 2, 2, 2,],
-            "adaptor_nums": [2, 2, 2, 2],
+            "layer_nums": [2, 2, 4, 6, 8],
+            "adaptor_nums": [2, 2, 4, 6, 8],
             "factor": 2,
             "norm_method": "layer",
             "pool_method": "max",

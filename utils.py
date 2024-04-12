@@ -202,11 +202,11 @@ def fd_solve_nlinear(GridSize, area, mu, center=(0.5, 0.5), Picard_maxiter=1000)
         newA = reaction_A(GridSize, kappa(u0.reshape(GridSize, GridSize), mu)).tocsr()
         newu = spsolve(newA, b)
 
-        # delta = ((newu - u0)**2 * h**2).sum()
+        delta = ((newu - u0)**2 * h**2).sum()
         delta = np.linalg.norm(newu - u0)
-        # error = ((newA @ u0 - b)**2 * h**2).sum()
+        error = ((newA @ u0 - b)**2 * h**2).sum()
         error = np.linalg.norm(newA @ u0 - b)
-        # print(f"Itr: {i}\t Delta: {delta:.3e}\t Error: {error:.3e}\t")
+        print(f"Itr: {i}\t Delta: {delta:.3e}\t Error: {error:.3e}\t")
 
         if delta < 1e-7 or error < 1e-7:
             break

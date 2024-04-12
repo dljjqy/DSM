@@ -3,6 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import mmbv, bvi, hard_encode, kappa
 
+class BatchedL2(nn.Module):
+    def __init__(self, h):
+        super().__init__()
+        self.h = h
+
+    def forward(self, pre, ref):
+        diff = (pre - ref)**2 * self.h**2
+        l2_errors = torch.sqrt(torch.sum(diff, dim=0))
+        return l2_errors.mean()
+
 class LinearMonitor(nn.Module):
     def __init__(self, A, dtype, device):
         super().__init__()
@@ -23,7 +33,8 @@ class BatchedMonitor(nn.Module):
     def forward(self, pre, B):
         u = torch.flatten(pre, 1, -1)[..., None]
         Au = torch.bmm(self.A, u)
-        errors = torch.sum((Au - B)**2, dim=0)
+
+        errors = torch.sqrt(torch.sum((Au - B)**2, dim=0))
         return errors.mean()
 
 class PinnGenerator(torch.nn.Module):
@@ -256,15 +267,17 @@ class CGBatched(nn.Module):
         r = b - torch.bmm(self.A, x)
         p = r
         for _ in range(max_iters):
-            rr = bvi(r, r)
+            rr = bvi(r, r)[..., None]
+            
             Ap = torch.bmm(self.A, p)
-            alpha = rr / bvi(p, Ap)
+            
+            alpha = rr / bvi(p, Ap)[..., None]
             x = x + alpha * p
             r1 = r - alpha * Ap
-            beta = bvi(r1, r1) / rr
+            beta = bvi(r1, r1)[..., None] / rr
             p = r1 + beta * p
             r = r1
-            print(f"error: {r.mean().item():.3e}")
+            # print(f"error: {r.mean().item():.3e}")
         return x
 
 

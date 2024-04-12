@@ -19,23 +19,25 @@ class Trainer(BaseTrainer):
         self, 
         method, 
         maxiter,
-        max_subiter_steps=500,
-        subiter_eps = 1e-7,
+        max_steps_on_batch=500,
+        convergence_error_eps = 1e-7,
         boundary_gap=0.001, 
         chip_gap=0.001, 
         *args, **kwargs
     ):
         self.method = method
         self.maxiter = maxiter
-        self.max_subiter_steps = max_subiter_steps
-        self.eps = subiter_eps
+        self.max_steps_on_batch = max_steps_on_batch
+        self.eps = convergence_error_eps
         self.boundary_gap = boundary_gap
         self.chip_gap = chip_gap
         super().__init__(*args, **kwargs)
 
         self.global_subiter_idx = 0
+        self.h = (self.area[0][0] - self.area[1][0]) / self.GridSize
         self.init_linearsys()
         self.gen_mesh(self.area, self.GridSize)
+        self.convergence_monitor =  BatchedL2(self.h)
 
     @property
     def name(self):
@@ -47,9 +49,7 @@ class Trainer(BaseTrainer):
         self.init_valdl()
 
     def epoch_reboot(self):
-        if self.global_epoch_idx % 50 == 0:
-            self.init_traindl()
-            self.init_valdl()
+        pass
 
     def gen_mesh(self, area, GridSize):
         (self.left, self.bottom), (self.right, self.top) = area
@@ -77,7 +77,7 @@ class Trainer(BaseTrainer):
             'lr':self.lr,
             'epochs':self.total_epochs,
             'tag':self.tag,
-            'max_subiter_steps': self.max_subiter_steps,
+            'max_steps_on_batch': self.max_steps_on_batch,
             'subiter_eps': self.eps,
             'net_kwargs': self.net_kwargs,
         }
@@ -157,35 +157,42 @@ class Trainer(BaseTrainer):
         B = layouts.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
         B = B[..., None]
 
-        for _ in tqdm(range(self.max_subiter_steps), desc='One Step Loop:', position=2, leave=False):
-            pre = self.net(data)
+        # make a initial prediction
+        pre = self.net(data)
+        for k in tqdm(range(self.max_steps_on_batch), desc='One Step Loop:', position=2, leave=False):
             with torch.no_grad():
                 label = generator(
                     torch.clone(torch.detach(pre)),
                     B, maxiter
                 )
                 error = monitor(pre, B).item()
-            
+
             # Compute MSE
             loss = self.loss_fn(pre, label)
-            
+            loss_val = loss.item()            
+
             # Backpropagation
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-            loss_val = loss.item()
+            new_pre = self.net(data)
+            convergence_error = self.convergence_monitor(new_pre, pre)
 
-            self.writer.add_scalar("Train-SubiterLoss", loss_val, self.global_subiter_idx)
-            self.writer.add_scalar("Train-SubiterError", error, self.global_subiter_idx)
+            self.writer.add_scalar("Train-PinnLoss", loss_val, self.global_subiter_idx)
+            self.writer.add_scalar("Train-Error", error, self.global_subiter_idx)
+            self.writer.add_scalar("Train-ConvergenceError", convergence_error, self.global_subiter_idx)
+
             self.global_subiter_idx += 1
 
-            if error <= self.eps:
+            if convergence_error <= self.eps:
                 break
+            else:
+                pre = new_pre
 
         return error, loss_val
 
-    def val_step(self, data, layouts, bd_cases, maxiter):
+    def val_step(self, data, layouts, boundary, bd_cases, maxiter):
         batch_size = layouts.shape[0]
 
         # First, we need generator and B
@@ -199,7 +206,7 @@ class Trainer(BaseTrainer):
         # Compute the label and error
         jac_ans = generator(pre, B, maxiter)
         
-        # Assemble real answer byu spsolve
+        # Assemble real answer by spsolve
         real_ans = []
         for i, bd_case in enumerate(bd_cases):
             b = B[i].cpu().numpy()
@@ -208,15 +215,23 @@ class Trainer(BaseTrainer):
 
         real_ans = torch.from_numpy(np.stack(real_ans)).to(self.dtype).to(self.device)
 
-        val_jac_loss = self.loss_fn(jac_ans, pre).item()
+        val_pinn_loss = self.loss_fn(jac_ans, pre).item()
         val_real_loss = self.loss_fn(real_ans, pre).item()
         error = monitor(pre, B).item()
 
-        return pre, real_ans, error, val_jac_loss, val_real_loss
+        self.writer.add_scalar("Val-Error", error, self.val_global_idx)
+        self.writer.add_scalar("Val-RealLoss", val_real_loss, self.val_global_idx)
+        self.writer.add_scalar("Val-PinnLoss", val_pinn_loss, self.val_global_idx)
+        self.val_plot(batch_size, pre, real_ans, layouts, boundary)
+
+        self.val_global_idx += 1
+
+        return error, val_pinn_loss, val_real_loss
     
     def train_loop(self):
         self.net.train()
         errors = []
+
         for data, layouts, _, bd_cases in tqdm(self.train_dl, desc='Training Loop:', leave=False, position=1):
             error, loss_val = self.train_step(data, layouts, bd_cases, self.maxiter)
             errors.append(error)
@@ -230,21 +245,14 @@ class Trainer(BaseTrainer):
         errors, subiter_loss, real_loss = [], [], []       
 
         for data, layout, boundary, bd_cases in tqdm(self.val_dl, desc='Validation Loop', leave=False, position=2):
-            batch_size = len(bd_cases)
-
-            pre, real_ans, error, val_subiter_loss, val_real_loss = self.val_step(
-                data, layout, bd_cases, self.maxiter
+            
+            error, val_pinn_loss, val_real_loss = self.val_step(
+                data, layout, boundary, bd_cases, self.maxiter
             )
+            
             errors.append(error)
             real_loss.append(val_real_loss)
-            subiter_loss.append(val_subiter_loss)
-
-            self.writer.add_scalar("Val-Error", error, self.val_global_idx)
-            self.writer.add_scalar("Val-RealLoss", val_real_loss, self.val_global_idx)
-            self.writer.add_scalar("Val-SubiterLoss", val_subiter_loss, self.val_global_idx)
-            self.val_plot(batch_size, pre, real_ans, layout, boundary)
-
-            self.val_global_idx += 1
+            subiter_loss.append(val_pinn_loss)
 
         return np.array(real_loss).mean(), np.array(errors).mean()
 
@@ -275,16 +283,16 @@ if __name__ == "__main__":
 
     trainer = Trainer(
         method="jac",
-        maxiter=15,
-        max_subiter_steps=200,
-        subiter_eps=1e-5,
+        maxiter=5,
+        max_steps_on_batch=500,
+        convergence_error_eps=3e-5,
         dtype=torch.float,
         device="cuda",
         area=((0, 0), (0.1, 0.1)),
         GridSize=GridSize,
-        trainN=2000,
+        trainN=10000,
         valN=20,
-        batch_size=25,
+        batch_size=5,
         net_kwargs=
         {
             'model_name': 'segmodel',
@@ -300,10 +308,11 @@ if __name__ == "__main__":
             "pool_method": "max",
             "padding": "same",
             "padding_mode": "replicate",
+            "end_padding_mode": "replicate",
         },
         log_dir=f"./all_logs/{mission_name}",
         lr=1e-3,
-        total_epochs=[150, 150],
+        total_epochs=[150],
         tag=tag,
         loss_fn=nn.functional.mse_loss,
         model_save_path=f"./model_save/{mission_name}",

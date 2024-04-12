@@ -35,6 +35,7 @@ class C3Ds(Dataset):
         b = torch.from_numpy(b).to(self.dtype).to(self.device)
         u = torch.from_numpy(u[np.newaxis, ...]).to(self.dtype).to(self.device)
 
+        # normed_cof = (cof - 0.1) / 9.9
         data = np.stack([self.xx, self.yy, cof], axis=0)
         data = torch.from_numpy(data).to(self.dtype).to(self.device)
         return data, cof, A, b, u
@@ -48,5 +49,8 @@ class C1Ds(C3Ds):
         A = self.read_matrix(index)
         b = torch.from_numpy(b).to(self.dtype).to(self.device)
         u = torch.from_numpy(u[np.newaxis, ...]).to(self.dtype).to(self.device)
+
+        # normed_cof = (cof - 0.1) / 9.9
+
         data = torch.from_numpy(cof).to(self.dtype).to(self.device)
         return data[None, ...], cof, A, b, u

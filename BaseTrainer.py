@@ -38,7 +38,7 @@ class BaseTrainer:
         self.total_epochs = total_epochs
         
         self.tag = tag
-        self.loss_fn = loss_fn        
+        self.loss_fn = loss_fn    
         
         self.model_save_path = f"{model_save_path}/{GridSize}/{self.name}"
         if not Path(self.model_save_path).is_dir():

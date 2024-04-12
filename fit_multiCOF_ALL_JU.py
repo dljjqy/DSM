@@ -25,7 +25,9 @@ class Trainer(BaseTrainer):
         super().__init__(*args, **kwargs)
 
         self.global_subiter_step = 0
-        
+        self.h = (self.area[0][0] - self.area[1][0]) / self.GridSize
+        self.convergence_monitor = BatchedL2(self.h)
+
     @property
     def name(self):
         return f"{self.tag}-{self.GridSize}-{self.net.name}-{self.method}-{self.maxiter}-{self.trainN}-{self.batch_size}"
@@ -87,12 +89,10 @@ class Trainer(BaseTrainer):
         # Get the generator and monitor
         generator, monitor = self.init_generator_monitor(A)
         
+        # Do prediction
+        pre = self.net(data)
         # One Step Loop
         for _ in tqdm(range(self.max_subiter_steps), desc='One Step Loop: ', position=2, leave=False):
-            
-            # Do prediction
-            pre = self.net(data)
-
             # Generate the label and compute the error
             with torch.no_grad():
                 label = generator(
@@ -101,18 +101,25 @@ class Trainer(BaseTrainer):
                 error = monitor(pre, B[..., None]).item()
 
             loss = self.loss_fn(label, pre)
+            loss_val = loss.item()
         
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-            loss_val = loss.item()
+            new_pre = self.net(data)
+            convergence_error = self.convergence_monitor(new_pre, pre)
+
             self.writer.add_scalar("Train-SubIterLoss", loss_val, self.global_subiter_step)
-            self.writer.add_scalar("Train-SubIterError", error, self.global_subiter_step)
+            self.writer.add_scalar("Train-Error", error, self.global_subiter_step)
+            self.writer.add_scalar("Train-ConvergenceError", convergence_error, self.global_subiter_step)
+
             self.global_subiter_step += 1
 
-            if error < self.eps:
+            if convergence_error < self.eps:
                 break
+            else:
+                pre = new_pre
             
         return error, loss_val
 
@@ -139,6 +146,7 @@ class Trainer(BaseTrainer):
             error, loss_val = self.train_step(data, A, B, self.maxiter)
 
             errors.append(error)
+        
         self.lr_scheduler.step()
         
         return np.array(errors).mean()
@@ -176,41 +184,43 @@ class Trainer(BaseTrainer):
 if __name__ == '__main__':
     # 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'
     # GridSize = 192
-    GridSize = 96
+    GridSize = 192
     mission_name = 'allcofs'
     tag = 'JuC1'
 
     trainer = Trainer(
         method='jac',
-        maxiter=20,
+        maxiter=15,
         max_subiter_steps=500,
-        subiter_eps=1e-8,
+        subiter_eps=5e-6,
         area = ((0, 0), (1, 1)),
         GridSize=GridSize,
-        trainN=2000,
-        valN=10,
-        batch_size=10,
+        trainN=8000,
+        valN=100,
+        batch_size=5,
         net_kwargs={
             'model_name': 'segmodel',
-            'Block': "ResBasic",
-            'planes':4,
+            'Block': "ResBottleNeck",
+            'planes':8,
             'in_channels':1,
             'classes':1,
             'GridSize':GridSize,
-            'layer_nums':[4, 6, 6, 8, 8],
-            'adaptor_nums':[4, 6, 6, 8, 8],
+            'layer_nums':   [4, 6, 6, 8, 8],
+            'adaptor_nums': [4, 6, 6, 8, 8],
             'factor':2,
-            'norm_method': 'layer',
+            'norm_method': 'batch',
             'pool_method':'max',
             'padding':'same',
             'padding_mode':'replicate',
+            'end_padding_mode':'replicate',
+
         },
         log_dir=f'./all_logs/{mission_name}',
         lr=1e-3,
         loss_fn=torch.nn.functional.mse_loss,
         model_save_path=f'./model_save/{mission_name}',
         tag = tag,
-        total_epochs=[150, 150],
+        total_epochs=[150],
         device='cuda',
         dtype=torch.float,
         hyper_params_save_path=f'./hyper_parameters/{mission_name}'

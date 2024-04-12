@@ -124,6 +124,11 @@ class C2DS(Dataset):
         layout = self.layouts[index]
         boundary = self.boundaries[index]
         boundary_tensor = self.boundary_tensors[index]
+
+        # ###
+        # normed_layout = (layout - layout.min()) / (layout.max() - layout.min())
+        # ###
+        
         data = torch.stack([boundary_tensor, layout])
         
         return data, layout, boundary, self.cases[index]

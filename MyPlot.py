@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 from pathlib import Path
 from matplotlib import cm
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 def fig_ax_for_save(kwargs={}, name='', fontsize=20, height=10, width=10, ticks=True, axis_label=True):
     fig, ax= plt.subplots(subplot_kw=kwargs)
@@ -136,7 +137,7 @@ def multi_heat_draw_img(name, f, boundary, pre, ans, GridSize, a=0.1, levels=Non
     cbar.ax.tick_params(labelsize=10)
 
     ax2.set_title(f'$Prediction$', fontsize=20)
-    ctf_pre = ax2.contourf(xx, yy, pre, cmap=cm.Spectral_r, levels=50)
+    ctf_pre = ax2.contourf(xx, yy, np.abs(pre - ans), cmap=cm.Spectral_r, levels=50)
     cbar=plt.colorbar(ctf_pre, shrink=0.85, ax=ax2)
     cbar.ax.tick_params(labelsize=10)
 
@@ -181,12 +182,12 @@ def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=1, levels=None):
     cbar.ax.tick_params(labelsize=10)
 
     ax2.set_title(f'$Prediction$', fontsize=20)
-    ctf_pre = ax2.contourf(xx, yy, pre, cmap=cm.Spectral_r,)
+    ctf_pre = ax2.contourf(xx, yy, pre, cmap=cm.Spectral_r, levels=50)
     cbar=plt.colorbar(ctf_pre, shrink=0.85, ax=ax2)
     cbar.ax.tick_params(labelsize=10)
 
     ax3.set_title(f'$Difference$', fontsize=20)
-    ctf_diff = ax3.contourf(xx, yy, np.abs(pre - ans), cmap=cm.Spectral_r,)
+    ctf_diff = ax3.contourf(xx, yy, np.abs(pre - ans), cmap=cm.Spectral_r, levels=50)
     cbar=plt.colorbar(ctf_diff, shrink=0.85, ax=ax3)
     cbar.ax.tick_params(labelsize=10)
 
@@ -203,14 +204,20 @@ def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=1, levels=None):
     fig.tight_layout()
     return fig
 
-def save_img_force(path, f,):
+def save_img_force(path, f, name='force', vmin=None, vmax=None):
     # Plot force function f
     fig, ax = fig_ax_for_save(ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
-    im = ax.imshow(f[::-1])
-    # cbar=plt.colorbar(surf_pre, shrink=0.85, ax=ax)
-    # cbar.ax.tick_params(labelsize=10)
-    fig.savefig(f"{path/'force.png'}", bbox_inches='tight')
+    if vmin is None or vmax is None:  
+        im = ax.imshow(f[::-1])
+    else:
+        im = ax.imshow(f[::-1], vmin=vmin, vmax=vmax)
+
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="4%", pad=0.1)
+    cbar=plt.colorbar(im, shrink=0.8, ax=ax, cax=cax, orientation='horizontal', location='top')
+    cbar.ax.tick_params(labelsize=10)
+    fig.savefig(f"{path}/{name}.png", bbox_inches='tight')
     plt.close(fig)
 
 def save_surf(path, z, xx, yy, name='surf_pre'):
@@ -219,17 +226,23 @@ def save_surf(path, z, xx, yy, name='surf_pre'):
     surf_pre = ax.plot_surface(xx, yy, z, cmap=cm.Spectral_r,)
     cbar=plt.colorbar(surf_pre, shrink=0.85, ax=ax)
     cbar.ax.tick_params(labelsize=10)
-    fig.savefig(f"{path/f'{name}.png'}", bbox_inches='tight')
+    fig.savefig(f"{path}/{name}.png", bbox_inches='tight')
     plt.close(fig)
 
-def save_ctf(path, pre, ans, xx, yy):
+def save_ctf(path, pre, ans, xx, yy, vmin=None, vmax=None):
     # plot contourf of difference between real answer and prediction
     fig, ax = fig_ax_for_save({}, ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
-    ct = ax.contourf(xx, yy, np.abs(ans - pre), cmap=cm.Spectral_r, levels=50)
-    cbar=plt.colorbar(ct, shrink=0.85, ax=ax)
-    cbar.ax.tick_params(labelsize=10)
-    fig.savefig(f"{path/'ctf_diff.png'}", bbox_inches='tight')
+    if vmin is None or vmax is None:  
+        ct = ax.contourf(xx, yy, np.abs(ans - pre), cmap=cm.Spectral_r, levels=50)
+    else:
+        ct = ax.contourf(xx, yy, np.abs(ans - pre), cmap=cm.Spectral_r, levels=50, vmin=vmin, vmax=vmax)
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="4%", pad=0.1)
+    cbar=plt.colorbar(ct, shrink=0.8, ax=ax, cax=cax, orientation='horizontal', location='top')
+
+    cbar.ax.tick_params(labelsize=10)    
+    fig.savefig(f"{path}/ctf_diff.png", bbox_inches='tight')
     plt.close(fig)
 
     # plot contourf of pre and ref
@@ -238,7 +251,7 @@ def save_ctf(path, pre, ans, xx, yy):
     ctf = ax.contourf(xx, yy, pre, alpha=1, cmap=cm.Spectral_r, levels=50)
     cbar=plt.colorbar(ctf, shrink=0.85, ax=ax)
     cbar.ax.tick_params(labelsize=10)
-    fig.savefig(f"{path/'ctf_pre.png'}", bbox_inches='tight')
+    fig.savefig(f"{path}/ctf_pre.png", bbox_inches='tight')
     plt.close(fig)
 
     fig, ax = fig_ax_for_save({}, ticks=False, axis_label=False)
@@ -246,16 +259,16 @@ def save_ctf(path, pre, ans, xx, yy):
     ctf = ax.contourf(xx, yy, ans, alpha=1, cmap=cm.Spectral_r, levels=50)
     cbar=plt.colorbar(ctf, shrink=0.85, ax=ax)
     cbar.ax.tick_params(labelsize=10)
-    fig.savefig(f"{path/'ctf_ref.png'}", bbox_inches='tight')
+    fig.savefig(f"{path}/ctf_ref.png", bbox_inches='tight')
     plt.close(fig)
 
 def save_contour(path, pre, ans, xx, yy, levels):
     # plot contour of prediction and real answer
-    fig, ax = fig_ax_for_save({}, ticks=False, axis_label=False)
+    fig, ax = fig_ax_for_save({}, height=10, width=10, ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
 
     if levels is None:
-        levels = np.linspace(ans.min(), ans.max(), 8)[1:-1]
+        levels = np.linspace(ans.min(), ans.max(), 10)[2:-1]
     ct1 = ax.contour(xx, yy, pre, colors='r', linestyles='dashed', linewidths=1.5, levels=levels)
     ct2 = ax.contour(xx, yy, ans, colors='b', linestyles='solid', linewidths=2, levels=levels)
     ax.clabel(ct1, inline=False, fontsize=20)
@@ -263,7 +276,7 @@ def save_contour(path, pre, ans, xx, yy, levels):
     blue_line = mlines.Line2D([], [], color='blue', markersize=20, label='ref')
     red_line = mlines.Line2D([], [], color='red', markersize=20, label='pre')
     ax.legend(handles=[blue_line, red_line], fontsize=16 )
-    fig.savefig(f"{path/'ct.png'}", bbox_inches='tight')
+    fig.savefig(f"{path}/ct.png", bbox_inches='tight')
     plt.close(fig)
 
 def save_img(path, f, pre, ans, xx, yy, levels=None):
