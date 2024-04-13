@@ -108,6 +108,13 @@ def coo2tensor(A, device, dtype=torch.float32):
         device=device, requires_grad=False, dtype=dtype, is_coalesced=True)
     return a
 
+def coo2data(A, ):
+    values = A.data
+    indices = np.vstack((A.row, A.col))
+    i = torch.LongTensor(indices)
+    v = torch.DoubleTensor(values)
+    return i, v
+
 def mmbv(A, y):
     """
     Sparse matrix multiply Batched vectors

@@ -4,7 +4,7 @@ import numpy as np
 from BaseTrainer import BaseTrainer
 from MyPlot import multi_cof_draw_img as draw_img
 from Generators import *
-from MultiCofDs import *
+from fit_multicof.MultiCofDs import *
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader

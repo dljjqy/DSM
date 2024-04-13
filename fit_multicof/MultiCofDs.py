@@ -1,12 +1,14 @@
 import torch
 import numpy as np
 from scipy.sparse import load_npz
-from utils import coo2tensor
+from utils import coo2tensor, coo2data
 from torch.utils.data import Dataset
 
 class C3Ds(Dataset):
     def __init__(self, start, DataN, area, GridSize, dtype, device):
         self.start = start
+        self.area = area
+        self.GridSize = GridSize
         (left, bottom), (right, top) = area
         dx = (right - left) / GridSize
         dy = (top - bottom) / GridSize
@@ -24,21 +26,22 @@ class C3Ds(Dataset):
     
     def read_matrix(self, index):
         a = load_npz(f"{self.path}/a{self.start + index}.npz").tocoo()
-        return coo2tensor(a, self.device, self.dtype)
+        i, v = coo2data(a)
+        return i, v
 
     def __getitem__(self, index):
         cof = np.load(f"{self.path}/c{self.start + index}.npy")
         u = np.load(f"{self.path}/u{self.start + index}.npy")
         b = np.load(f"{self.path}/b{self.start + index}.npy")
 
-        A = self.read_matrix(index)
+        i, v = self.read_matrix(index)
         b = torch.from_numpy(b).to(self.dtype).to(self.device)
         u = torch.from_numpy(u[np.newaxis, ...]).to(self.dtype).to(self.device)
 
         # normed_cof = (cof - 0.1) / 9.9
         data = np.stack([self.xx, self.yy, cof], axis=0)
         data = torch.from_numpy(data).to(self.dtype).to(self.device)
-        return data, cof, A, b, u
+        return data, cof, i, v, b, u
 
 class C1Ds(C3Ds):
     def __getitem__(self, index):
@@ -46,11 +49,11 @@ class C1Ds(C3Ds):
         u = np.load(f"{self.path}/u{self.start + index}.npy")
         b = np.load(f"{self.path}/b{self.start + index}.npy")
         
-        A = self.read_matrix(index)
+        i, v = self.read_matrix(index)
         b = torch.from_numpy(b).to(self.dtype).to(self.device)
         u = torch.from_numpy(u[np.newaxis, ...]).to(self.dtype).to(self.device)
 
         # normed_cof = (cof - 0.1) / 9.9
 
         data = torch.from_numpy(cof).to(self.dtype).to(self.device)
-        return data[None, ...], cof, A, b, u
+        return data[None, ...], cof, i, v, b, u

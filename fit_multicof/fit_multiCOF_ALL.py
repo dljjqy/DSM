@@ -4,11 +4,11 @@ import numpy as np
 from BaseTrainer import BaseTrainer
 from MyPlot import multi_cof_draw_img as draw_img
 from Generators import *
-from MultiCofDs import *
+from fit_multicof.MultiCofDs import *
 
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-    
+
 class Trainer(BaseTrainer):
     def __init__(
         self,  
@@ -28,7 +28,6 @@ class Trainer(BaseTrainer):
         self.init_traindl()
         self.init_valdl()
         self.config_optimizer(self.lr)
-        # self.method = 'cg'
 
     def epoch_reboot(self):
         pass
@@ -57,7 +56,7 @@ class Trainer(BaseTrainer):
         elif self.net_kwargs['in_channels'] == 1:
             train_ds = C1Ds(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
             
-        self.train_dl = DataLoader(train_ds, self.batch_size)
+        self.train_dl = DataLoader(train_ds, self.batch_size, shuffle=True, num_workers=5,)
 
     def init_valdl(self):         
         if self.net_kwargs['in_channels'] == 3:
@@ -67,7 +66,9 @@ class Trainer(BaseTrainer):
             
         self.val_dl = DataLoader(val_ds, self.batch_size)
     
-    def init_generator_monitor(self, A):
+    def init_generator_monitor(self, i, v):
+        A = batchediv2tensor(i, v, self.GridSize, self.dtype, self.device)
+
         match self.method:
             case 'jac':
                 generator = JacBatched(A, self.dtype, self.device)
@@ -76,9 +77,9 @@ class Trainer(BaseTrainer):
         monitor = BatchedMonitor(A, self.dtype, self.device)
         return generator, monitor
 
-    def train_step(self, data, A, B, maxiter):
+    def train_step(self, data, i, v, B, maxiter):
         # Get the generator and monitor
-        generator, monitor = self.init_generator_monitor(A)
+        generator, monitor = self.init_generator_monitor(i, v)
         
         # Do prediction
         pre = self.net(data)
@@ -102,9 +103,9 @@ class Trainer(BaseTrainer):
 
         return error, loss_val
 
-    def val_step(self, data, A, B, U, maxiter):
+    def val_step(self, data, i, v, B, U, maxiter):
         # Get the generator and monitor
-        generator, monitor = self.init_generator_monitor(A)
+        generator, monitor = self.init_generator_monitor(i, v)
 
         # Prediction
         pre = self.net(data)
@@ -121,8 +122,8 @@ class Trainer(BaseTrainer):
     def train_loop(self):
         self.net.train()
         errors = []
-        for data, cofs, A, B, U in tqdm(self.train_dl, desc='Training Loop:', position=1, leave=False):
-            error, loss_val = self.train_step(data, A, B, self.maxiter)
+        for data, cofs, i, v, B, U in tqdm(self.train_dl, desc='Training Loop:', position=1, leave=False):
+            error, loss_val = self.train_step(data, i, v, B, self.maxiter)
 
             errors.append(error)
         self.lr_scheduler.step()
@@ -131,8 +132,8 @@ class Trainer(BaseTrainer):
     def val_loop(self):
         self.net.eval()
         val_errors, real_loss_vals = [], []
-        for data, cofs, A, B, U in tqdm(self.val_dl, desc='Validation Loop:', position=2, leave=False):
-            pre, real_loss, subiter_loss, error = self.val_step(data, A, B, U, self.maxiter)
+        for data, cofs, i, v, B, U in tqdm(self.val_dl, desc='Validation Loop:', position=2, leave=False):
+            pre, real_loss, subiter_loss, error = self.val_step(data, i, v, B, U, self.maxiter)
 
             val_errors.append(error)
             real_loss_vals.append(real_loss)
@@ -159,9 +160,10 @@ class Trainer(BaseTrainer):
 if __name__ == '__main__':
     # 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'
     # GridSize = 192
-    GridSize = 96
+    GridSize = 192
     mission_name = 'allcofs'
-    tag = 'JJQC1'
+    tag = 'JJQC3'
+    torch.multiprocessing.set_start_method('spawn')
 
     trainer = Trainer(
         method='jac',
@@ -169,22 +171,22 @@ if __name__ == '__main__':
         area = ((0, 0), (1, 1)),
         GridSize=GridSize,
         trainN=10000,
-        valN=50,
+        valN=100,
         batch_size=5,
         net_kwargs={
             'model_name': 'segmodel',
             'Block': "ResBottleNeck",
             'planes':6,
-            'in_channels':1,
+            'in_channels':3,
             'classes':1,
             'GridSize':GridSize,
             'layer_nums':   [4, 6, 6, 8, 8],
             'adaptor_nums': [4, 6, 6, 8, 8],
             'factor':2,
             'norm_method': 'layer',
-            'pool_method':'max',
+            'pool_method':'avg',
             'padding':'same',
-            'padding_mode':'replicate',
+            'padding_mode':'reflect',
         },
         log_dir=f'./all_logs/{mission_name}',
         lr=1e-3,

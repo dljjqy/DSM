@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 
 from BaseTrainer import BaseTrainer
-from NLinearDs import C1FTDs, C1FVDs, C3FTDs, C3FVDs
+from fit_nlinear.NLinearDs import C1FTDs, C1FVDs, C3FTDs, C3FVDs
 from utils import hard_encode, L2Loss
 from random import choice
 from SegModel import *

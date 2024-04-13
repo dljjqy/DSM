@@ -1,9 +1,12 @@
+import sys
+sys.path.append('../')
+
 from scipy.sparse import save_npz
 from pathlib import Path
 from utils import PieceWiseConst
 from ConstCofFVM import *
-# from UniformICD import UniformFVM
-# from Problems import BlockCofProblem
+from UniformICD import UniformFVM
+from Problems import BlockCofProblem
 from tqdm import tqdm
 import numpy as np
 
@@ -18,7 +21,7 @@ import argparse
 #         np.save(f'{save_path}/b.npy', b)
 #     np.save(f'{save_path}/c{idx}.npy', cof)
 
-def gen_data(start, N, GridSize, save_path='./DLdata/allcofs', area=((0, 0), (1, 1))):
+def gen_data(start, N, GridSize, save_path='./DLdata/', area=((0, 0), (1, 1))):
     save_path = save_path + f'/{GridSize}'
     p = Path(save_path)
     if not p.is_dir():
@@ -73,6 +76,6 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     # print(args.start)
-    gen_data(args.start, args.dataN, args.GridSize, './DLdata/allcofs')
+    gen_data(args.start, args.dataN, args.GridSize, './DLdata/')
     # print(time() - start)
     # print(parser.parse_args())

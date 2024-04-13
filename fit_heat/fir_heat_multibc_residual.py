@@ -6,7 +6,7 @@ from MyPlot import multi_heat_draw_img as draw_img
 from utils import ChipLayout, layout2csv, coo2tensor
 from BaseTrainer import BaseTrainer
 from Generators import *
-from HeatMultibcDs import *
+from fit_heat.HeatMultibcDs import *
 
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import load_npz

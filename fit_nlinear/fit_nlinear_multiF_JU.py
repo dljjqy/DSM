@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from utils import L2Loss, kappa, force, hard_encode
 from MyPlot import multi_nonlinear_draw_img as draw_img
 from Generators import PinnGenerator_Ju
-from NLinearDs import *
+from fit_nlinear.NLinearDs import *
 from tqdm import tqdm
 from random import uniform
 from torch.utils.data import DataLoader

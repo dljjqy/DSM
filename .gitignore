@@ -2,6 +2,11 @@
 *.pyc
 *.zip
 /*data
+*/DLdata/
+*/hyper_parameters/
+*/model_save/
+*/all_logs/
+*/images/
 /all_logs/
 /model_save/
 /images/

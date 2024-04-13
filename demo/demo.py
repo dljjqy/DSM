@@ -190,11 +190,11 @@ class Trainer(BaseTrainer):
 if __name__ == "__main__":
     from torch.nn.functional import mse_loss
     GridSize = 128
-    mission_name = "demo"
-    tag = "Residual"
+    mission_name = "Residual"
+    tag = "nothing"
 
     trainer = Trainer(
-        method="jac",
+        method="residual",
         dtype=torch.float,
         device="cuda",
         area=((-1, -1), (1, 1)),
