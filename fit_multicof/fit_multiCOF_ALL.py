@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import torch
 import numpy as np
 
@@ -50,13 +52,14 @@ class Trainer(BaseTrainer):
         return kwargs
 
     def init_traindl(self):
-        self.start = np.random.randint(0, 30000 - self.trainN - self.valN)
+        # self.start = np.random.randint(0, 30000 - self.trainN - self.valN)
+        self.start = 1
         if self.net_kwargs['in_channels'] == 3:
             train_ds = C3Ds(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
         elif self.net_kwargs['in_channels'] == 1:
             train_ds = C1Ds(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
             
-        self.train_dl = DataLoader(train_ds, self.batch_size, shuffle=True, num_workers=5,)
+        self.train_dl = DataLoader(train_ds, self.batch_size, shuffle=True, )
 
     def init_valdl(self):         
         if self.net_kwargs['in_channels'] == 3:
@@ -66,8 +69,8 @@ class Trainer(BaseTrainer):
             
         self.val_dl = DataLoader(val_ds, self.batch_size)
     
-    def init_generator_monitor(self, i, v):
-        A = batchediv2tensor(i, v, self.GridSize, self.dtype, self.device)
+    def init_generator_monitor(self, A):
+        # A = batchediv2tensor(A, self.GridSize, self.dtype, self.device)
 
         match self.method:
             case 'jac':
@@ -77,35 +80,38 @@ class Trainer(BaseTrainer):
         monitor = BatchedMonitor(A, self.dtype, self.device)
         return generator, monitor
 
-    def train_step(self, data, i, v, B, maxiter):
+    def train_step(self, data, A, B, maxiter):
         # Get the generator and monitor
-        generator, monitor = self.init_generator_monitor(i, v)
+        generator, monitor = self.init_generator_monitor(A)
         
         # Do prediction
         pre = self.net(data)
 
         with torch.no_grad():
             labels = generator(
-                        torch.clone(torch.detach(pre)), 
-                        B[..., None], maxiter)
-            error = monitor(pre, B[..., None]).item()
+                    torch.clone(torch.detach(pre)), 
+                    B[..., None], maxiter
+                    )
+            loss_val = self.loss_fn(labels, pre).item()
+            
+        error = monitor(pre, B[..., None])
 
-        loss = self.loss_fn(labels, pre)
+        # loss = self.loss_fn(labels, pre)
 
         self.optimizer.zero_grad()
-        loss.backward()
+        error.backward()
         self.optimizer.step()
 
-        loss_val = loss.item()
+        # loss_val = loss.item()
         self.writer.add_scalar("Train-SubIterLoss", loss_val, self.train_global_idx)
         self.writer.add_scalar("Train-Error", error, self.train_global_idx)
         self.train_global_idx += 1
 
-        return error, loss_val
+        return error.item(), loss_val
 
-    def val_step(self, data, i, v, B, U, maxiter):
+    def val_step(self, data, A,  B, U, maxiter):
         # Get the generator and monitor
-        generator, monitor = self.init_generator_monitor(i, v)
+        generator, monitor = self.init_generator_monitor(A)
 
         # Prediction
         pre = self.net(data)
@@ -122,8 +128,8 @@ class Trainer(BaseTrainer):
     def train_loop(self):
         self.net.train()
         errors = []
-        for data, cofs, i, v, B, U in tqdm(self.train_dl, desc='Training Loop:', position=1, leave=False):
-            error, loss_val = self.train_step(data, i, v, B, self.maxiter)
+        for data, cofs, A, B, U in tqdm(self.train_dl, desc='Training Loop:', position=1, leave=False):
+            error, loss_val = self.train_step(data, A, B, self.maxiter)
 
             errors.append(error)
         self.lr_scheduler.step()
@@ -132,8 +138,8 @@ class Trainer(BaseTrainer):
     def val_loop(self):
         self.net.eval()
         val_errors, real_loss_vals = [], []
-        for data, cofs, i, v, B, U in tqdm(self.val_dl, desc='Validation Loop:', position=2, leave=False):
-            pre, real_loss, subiter_loss, error = self.val_step(data, i, v, B, U, self.maxiter)
+        for data, cofs, A, B, U in tqdm(self.val_dl, desc='Validation Loop:', position=2, leave=False):
+            pre, real_loss, subiter_loss, error = self.val_step(data, A, B, U, self.maxiter)
 
             val_errors.append(error)
             real_loss_vals.append(real_loss)
@@ -159,11 +165,9 @@ class Trainer(BaseTrainer):
 
 if __name__ == '__main__':
     # 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'
-    # GridSize = 192
-    GridSize = 192
-    mission_name = 'allcofs'
-    tag = 'JJQC3'
-    torch.multiprocessing.set_start_method('spawn')
+    GridSize = 96
+    tag = 'JJQC3-Norm-Res'
+    # torch.multiprocessing.set_start_method('spawn')
 
     trainer = Trainer(
         method='jac',
@@ -176,27 +180,28 @@ if __name__ == '__main__':
         net_kwargs={
             'model_name': 'segmodel',
             'Block': "ResBottleNeck",
-            'planes':6,
+            'planes':8,
             'in_channels':3,
             'classes':1,
             'GridSize':GridSize,
-            'layer_nums':   [4, 6, 6, 8, 8],
-            'adaptor_nums': [4, 6, 6, 8, 8],
+            'layer_nums':   [4, 4, 6, 6, 8],
+            'adaptor_nums': [4, 4, 6, 6, 8],
             'factor':2,
             'norm_method': 'layer',
-            'pool_method':'avg',
+            'pool_method':'max',
             'padding':'same',
             'padding_mode':'reflect',
+            'end_padding_mode':'reflect',
         },
-        log_dir=f'./all_logs/{mission_name}',
+        log_dir=f'./all_logs',
         lr=1e-3,
         loss_fn=torch.nn.functional.mse_loss,
-        model_save_path=f'./model_save/{mission_name}',
+        model_save_path=f'./model_save',
         tag = tag,
         total_epochs=[150],
         device='cuda',
         dtype=torch.float,
-        hyper_params_save_path=f'./hyper_parameters/{mission_name}'
+        hyper_params_save_path=f'./hyper_parameters'
     )
     trainer.fit_loop()
 

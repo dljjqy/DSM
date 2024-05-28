@@ -120,19 +120,19 @@ class BaseTrainer:
     def save_best_train_error(self, new_train_error):
         if new_train_error <= self.best_train_error:
             self.best_train_error = new_train_error
-            print(f"\nEpoch {self.global_epoch_idx} Best train loss: {self.best_train_error:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
+            # print(f"\nEpoch {self.global_epoch_idx} Best train loss: {self.best_train_error:5<.3e} LR: {self.lr_scheduler._last_lr[0]:5<.2e}")
             torch.save(self.net.state_dict(), f'{self.model_save_path}/best_train.pt')
     
     def save_best_val_real(self, new_val_real_loss):
         if new_val_real_loss <= self.best_val_real_loss:
             self.best_val_real_loss = new_val_real_loss
-            print(f"\nEpoch {self.global_epoch_idx} Best validation  Real loss: {self.best_val_real_loss:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
+            # print(f"\nEpoch {self.global_epoch_idx} Best validation  Real loss: {self.best_val_real_loss:5<.3e} LR: {self.lr_scheduler._last_lr[0]:5<.2e}")
             torch.save(self.net.state_dict(), f'{self.model_save_path}/best_val.pt')
     
     def save_best_val_error(self, new_val_error):
         if new_val_error <= self.best_val_error:
             self.best_val_error = new_val_error
-            print(f"\nEpoch {self.global_epoch_idx} Best validation subitr loss: {self.best_val_error:5<.3e} LR: {self.lr_scheduler.get_last_lr()[0]:5<.2e}")
+            # print(f"\nEpoch {self.global_epoch_idx} Best validation subitr loss: {self.best_val_error:5<.3e} LR: {self.lr_scheduler._last_lr[0]:5<.2e}")
             torch.save(self.net.state_dict(), f'{self.model_save_path}/best_val_itr.pt')
 
     def fit_loop(self):

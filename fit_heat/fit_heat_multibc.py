@@ -41,11 +41,15 @@ class Trainer(BaseTrainer):
 
     def reboot(self):
         self.config_optimizer(self.lr)
-        self.init_generator_monitor()
 
-    def epoch_reboot(self):
         self.init_traindl()
         self.init_valdl()
+        # self.init_generator_monitor()
+
+    def epoch_reboot(self):
+        # self.init_traindl()
+        # self.init_valdl()
+        pass
 
     def gen_mesh(self, area, GridSize):
         (self.left, self.bottom), (self.right, self.top) = area
@@ -97,39 +101,39 @@ class Trainer(BaseTrainer):
         self.B = []
 
         for bd_case in [0, 1, 2]:
-            A_np = load_npz(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
+            A_np = load_npz(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
             self.Anp.append(A_np)
             
             A_torch = coo2tensor(A_np.tocoo(), self.device, self.dtype)
             self.Atorch.append(A_torch)
 
-            b = np.load(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
+            b = np.load(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
             b = torch.from_numpy(b).to(self.dtype).to(self.device)
             self.B.append(b)
         
         self.B = torch.stack(self.B)
     
-    def init_generator_monitor(self,):
-        self.generator = []
-        self.monitor = []
+    # def init_generator_monitor(self,):
+    #     self.generator = []
+    #     self.monitor = []
 
-        for bd_case in [0, 1, 2]:
-            self.generator.append(
-                JacTorch(self.Atorch[bd_case], self.device, self.dtype)
-            )    
-            self.monitor.append(
-                LinearMonitor(self.Atorch[bd_case], self.dtype, self.device)
-            )
+        # for bd_case in [0, 1, 2]:
+        #     self.generator.append(
+        #         JacTorch(self.Atorch[bd_case], self.device, self.dtype)
+        #     )    
+        #     self.monitor.append(
+        #         LinearMonitor(self.Atorch[bd_case], self.dtype, self.device)
+        #     )
 
-    # def init_generator_monitor(self, bd_cases):
-    #     batched_A = []
-    #     for c in bd_cases:
-    #         c = c.item()
-    #         batched_A.append(torch.clone(torch.detach(self.Atorch[c])))
-    #     batched_A = torch.stack(batched_A)
-    #     generator = JacBatched(batched_A, self.dtype, self.device)
-    #     monitor = BatchedMonitor(batched_A, self.dtype, self.device)
-    #     return generator, monitor
+    def init_generator_monitor(self, bd_cases):
+        batched_A = []
+        for c in bd_cases:
+            c = c.item()
+            batched_A.append(torch.detach(self.Atorch[c]))
+        batched_A = torch.stack(batched_A)
+        generator = JacBatched(batched_A, self.dtype, self.device)
+        monitor = BatchedMonitor(batched_A, self.dtype, self.device)
+        return generator, monitor
 
     def init_traindl(self):
         layouts = self.gen_layouts(self.trainN)
@@ -298,13 +302,12 @@ class Trainer(BaseTrainer):
 if __name__ == "__main__":
     from torch.nn.functional import mse_loss
 
-    GridSize = 256
-    mission_name = "heat_multibc"
-    tag = "JJQC2ReSample"
+    GridSize = 128
+    tag = "JJQC2"
 
     trainer = Trainer(
         method="jac",
-        maxiter=15,
+        maxiter=5,
         dtype=torch.float,
         device="cuda",
         area=((0, 0), (0.1, 0.1)),
@@ -312,30 +315,30 @@ if __name__ == "__main__":
         trainN=10000,
         valN=10,
         batch_size=5,
-        net_kwargs=
-        {
+        net_kwargs={
             'model_name': 'segmodel',
-            "Block": 'ResBottleNeck',
-            "planes": 6,
-            "in_channels": 2,
-            "classes": 1,
-            "GridSize": GridSize,
-            "layer_nums": [2, 2, 2, 2,],
-            "adaptor_nums": [2, 2, 2, 2],
-            "factor": 2,
-            "norm_method": "layer",
-            "pool_method": "max",
-            "padding": "same",
-            "padding_mode": "reflect",
-            "end_padding_mode": "reflect",
+            'Block': "ResBottleNeck",
+            'planes':8,
+            'in_channels':2,
+            'classes':1,
+            'GridSize':GridSize,
+            'layer_nums':   [4, 4, 6, 6, 8],
+            'adaptor_nums': [4, 4, 6, 6, 8],
+            'factor':2,
+            'norm_method': 'layer',
+            'pool_method':'max',
+            'padding':'same',
+            'padding_mode':'reflect',
+            'end_padding_mode':'reflect',
+
         },
-        log_dir=f"./all_logs/{mission_name}",
+        log_dir=f"./all_logs",
         lr=1e-3,
-        total_epochs=[180],
+        total_epochs=[150],
         tag=tag,
         loss_fn=mse_loss,
-        model_save_path=f"./model_save/{mission_name}",
-        hyper_params_save_path=f"./hyper_parameters/{mission_name}",
+        model_save_path=f"./model_save",
+        hyper_params_save_path=f"./hyper_parameters",
         )
     
     trainer.fit_loop()

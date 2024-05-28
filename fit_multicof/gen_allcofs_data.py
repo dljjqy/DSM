@@ -21,7 +21,7 @@ import argparse
 #         np.save(f'{save_path}/b.npy', b)
 #     np.save(f'{save_path}/c{idx}.npy', cof)
 
-def gen_data(start, N, GridSize, save_path='./DLdata/', area=((0, 0), (1, 1))):
+def gen_data(start, N, GridSize, save_path='./DLdata/ForTest', area=((0, 0), (1, 1))):
     save_path = save_path + f'/{GridSize}'
     p = Path(save_path)
     if not p.is_dir():

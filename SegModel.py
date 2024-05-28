@@ -6,15 +6,15 @@ from typing import Type, Union
 import segmentation_models_pytorch as smp
 
 class DoubleConv(nn.Module):
-    def __init__(self, inc, outc, mode='reflect'):
+    def __init__(self, inc, outc, mode='reflect', act=nn.ReLU()):
         super().__init__()
         layers = [
             nn.Conv2d(inc, outc, 3, 1, padding='same', padding_mode=mode),
             nn.BatchNorm2d(outc),
-            nn.ReLU(),
+            act,
             nn.Conv2d(outc, outc, 3, 1, padding='same', padding_mode=mode),
             nn.BatchNorm2d(outc),
-            nn.ReLU()
+            act,
             ]
         self.net = nn.Sequential(*layers)
     
@@ -22,13 +22,18 @@ class DoubleConv(nn.Module):
         return self.net(x)
 
 class UNetEncoder(nn.Module):
-    def __init__(self, inc, outc):
+    def __init__(
+            self, 
+            inc, 
+            outc, 
+            padding_mode,
+            act):
         super().__init__()
         layers = [
             # nn.Conv2d(inc, inc, 5, 2, padding=2, padding_mode='reflect'),
             # nn.FractionalMaxPool2d(2, output_ratio=(0.5, 0.5)),
             nn.MaxPool2d(2, 2),
-            DoubleConv(inc, outc),
+            DoubleConv(inc, outc, padding_mode, act),
         ]
         self.net = nn.Sequential(*layers)
     
@@ -36,10 +41,17 @@ class UNetEncoder(nn.Module):
         return self.net(x)
 
 class UNetDecoder(nn.Module):
-    def __init__(self, inc, outc, kernel_size=(2, 2), step_size=(2, 2)):
+    def __init__(
+            self, 
+            inc, 
+            outc,
+            padding_mode, 
+            act, 
+            kernel_size=(2, 2), 
+            step_size=(2, 2)):
         super().__init__()
         self.decoder = nn.ConvTranspose2d(inc, outc, kernel_size, step_size)
-        self.dconv = DoubleConv(outc, outc)
+        self.dconv = DoubleConv(outc, outc, padding_mode, act)
     
     def forward(self, x1, x2):
         x1 = self.decoder(x1)
@@ -57,28 +69,42 @@ class VaryUNet(nn.Module):
         layers: How deep the UNet is.
         end_padding: The padding mode in the last one conv layer. For finite difference method with point type mesh, end_padding should be 'valid' for Dirichlet type. And (0, 1) for Mixed type boundary.
     '''
-    def __init__(self, in_channels=2, classes=1, features=8, layers=5, end_padding=(0, 1)):
+    def __init__(
+            self, 
+            in_channels=2, 
+            classes=1, 
+            features=8, 
+            layers=5, 
+            end_padding=(0, 1),
+            padding_mode='reflect',
+            act=nn.ReLU()):
         super().__init__()
         self.in_c = in_channels
         self.out_c = classes
         self.features = features
         self.layers = layers
 
-        self.first = nn.Conv2d(in_channels, features, 3, 1, padding='same', padding_mode='reflect')
+        # self.first = nn.Conv2d(in_channels, features, 3, 1, padding='same', padding_mode='reflect')
+        self.first = DoubleConv(in_channels, features, mode=padding_mode, act = act)
         self.decoders = []
         self.encoders = []
         for i in range(layers):
             self.encoders.append(
                 UNetEncoder(2**i * features, 
-                        2**(i+1) * features))
+                        2**(i+1) * features,
+                        padding_mode,
+                        act))
             
             self.decoders.append(
                 UNetDecoder(2**(layers-i) * features , 
-                        2**(layers-i-1) * features))
+                        2**(layers-i-1) * features),
+                        padding_mode,
+                        act)
 
         # Middle and End layers
-        self.mid = nn.Conv2d(2**(layers) * features, 2**(layers) * features, 1, 1, padding='valid', bias = False)
-        self.end = nn.Conv2d(features, classes, 3, 1, padding=end_padding, padding_mode='reflect')
+        # self.mid = nn.Conv2d(2**(layers) * features, 2**(layers) * features, 1, 1, padding='valid', bias = False)
+        self.mid = DoubleConv(2**(layers) * features, 2**(layers) * features, mode=padding_mode, act=act)
+        self.end = nn.Conv2d(features, classes, 3, 1, padding=end_padding, padding_mode=padding_mode)
         
         self.encoders = nn.ModuleList(self.encoders)
         self.decoders = nn.ModuleList(self.decoders)
@@ -116,7 +142,7 @@ class BasicBlock(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, 3, 1, padding=padding, padding_mode=padding_mode)
         self.conv2 = nn.Conv2d(out_channels, out_channels, 3, 1, padding=padding, padding_mode=padding_mode)
-        # self.relu = nn.ReLU(inplace=True)
+        # self.act = nn.ReLU(inplace=True)
 
         match norm_method:
             case 'batch':
@@ -151,11 +177,12 @@ class ResBasicBlock(nn.Module):
         GridSize: int = 64,
         norm_method: Literal['batch', 'layer'] = 'batch', 
         padding='same',
-        padding_mode='reflect',):
+        padding_mode='reflect',
+        act=nn.ReLU()):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, out_channels, 3, 1, padding=padding, padding_mode=padding_mode)
         self.conv2 = nn.Conv2d(out_channels, out_channels, 3, 1, padding=padding, padding_mode=padding_mode)
-        self.relu = nn.ReLU()
+        self.act = act
 
         match norm_method:
             case 'batch':
@@ -172,7 +199,7 @@ class ResBasicBlock(nn.Module):
         self.block = nn.Sequential(
             self.conv1, 
             self.bn1,
-            self.relu,
+            self.act,
             self.conv2,
             self.bn2,
         )
@@ -188,7 +215,7 @@ class ResBasicBlock(nn.Module):
         
         out = out + identity
         
-        out = self.relu(out)
+        out = self.act(out)
         return out
 
 class ResBottleNeck(nn.Module):
@@ -200,6 +227,7 @@ class ResBottleNeck(nn.Module):
         norm_method: Literal['batch', 'layer'] = 'batch',
         padding='same',
         padding_mode='reflect',
+        act = nn.ReLU()
         ):
 
         super().__init__()
@@ -207,7 +235,7 @@ class ResBottleNeck(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, mid_channels, 1, 1, padding=padding, padding_mode=padding_mode)
         self.conv2 = nn.Conv2d(mid_channels, mid_channels, 3, 1, padding=padding, padding_mode=padding_mode)
         self.conv3 = nn.Conv2d(mid_channels, out_channels, 1, 1, padding=padding, padding_mode=padding_mode)
-        self.relu = nn.ReLU()
+        self.act = act
 
         match norm_method:
             case 'batch':
@@ -227,10 +255,10 @@ class ResBottleNeck(nn.Module):
         self.block = nn.Sequential(
             self.conv1, 
             self.bn1,
-            self.relu,
+            self.act,
             self.conv2,
             self.bn2,
-            self.relu,
+            self.act,
             self.conv3,
             self.bn3,
         )
@@ -247,7 +275,7 @@ class ResBottleNeck(nn.Module):
 
         out = out + identity
         
-        out = self.relu(out)
+        out = self.act(out)
         return out
 
 class InputHeader(nn.Module):
@@ -259,6 +287,7 @@ class InputHeader(nn.Module):
         norm_method: Literal['batch', 'layer'] = 'batch',
         padding='same',
         padding_mode='reflect',
+        act = nn.ReLU()
         ):
         super().__init__()
         self.conv1 = nn.Conv2d(
@@ -275,7 +304,7 @@ class InputHeader(nn.Module):
             padding=padding,
             padding_mode=padding_mode,
         )
-        self.relu = nn.ReLU()
+        self.act = act
         match norm_method:
             case 'batch':
                 self.bn1 = nn.BatchNorm2d(out_channels)
@@ -291,10 +320,10 @@ class InputHeader(nn.Module):
         self.net = nn.Sequential(
             self.conv1,
             self.bn1,
-            self.relu,
+            self.act,
             self.conv2,
             self.bn2,
-            self.relu,
+            self.act,
         )
 
     def forward(self, x):
@@ -307,7 +336,8 @@ class OutputHeader(nn.Module):
         in_channels, 
         classes,  
         padding='same',
-        padding_mode='reflect'):
+        padding_mode='reflect',
+        act=nn.ReLU()):
         super().__init__()
         
         self.conv =  nn.Conv2d(
@@ -317,7 +347,7 @@ class OutputHeader(nn.Module):
             padding=padding,
             padding_mode=padding_mode
         )
-        self.act = nn.ReLU()
+        self.act = act
 
         self.header = nn.Conv2d(
             in_channels=in_channels,
@@ -343,6 +373,7 @@ class Encoder(nn.Module):
         pool_method: Literal['max', 'avg'] = 'max',
         padding='same',
         padding_mode='reflect',
+        act=nn.ReLU()
         ):
         super().__init__()
         self.in_channels = in_channels
@@ -352,6 +383,7 @@ class Encoder(nn.Module):
         self.norm_method = norm_method
         self.padding = padding
         self.padding_mode = padding_mode
+        self.act = act
 
         match pool_method:
             case 'max':
@@ -365,7 +397,7 @@ class Encoder(nn.Module):
         for num_blocks in layer_nums:
             layers.append(
                 self._make_layer(
-                    Block, num_blocks, self.in_channels
+                    Block, num_blocks, self.in_channels,
                 )
             )
             self.in_channels = self.factor * self.in_channels
@@ -395,6 +427,7 @@ class Encoder(nn.Module):
                 self.norm_method,
                 self.padding,
                 self.padding_mode,
+                self.act
                 )
         ]
         for _ in range(1, num_blocks):
@@ -406,6 +439,7 @@ class Encoder(nn.Module):
                     self.norm_method,
                     self.padding,
                     self.padding_mode,
+                    self.act
                     )
                 )
         return nn.Sequential(*blocks)
@@ -421,6 +455,7 @@ class Decoder(nn.Module):
         norm_method: Literal['batch', 'layer'] = 'batch',
         padding='same',
         padding_mode='reflect',
+        act = nn.ReLU()
         ):
         super().__init__()
         self.out_channels = out_channels
@@ -430,6 +465,7 @@ class Decoder(nn.Module):
         self.norm_method = norm_method
         self.padding = padding
         self.padding_mode = padding_mode
+        self.act = act
 
         layers = []
         for num_blocks in layer_nums:
@@ -465,7 +501,8 @@ class Decoder(nn.Module):
                 self.GridSize,
                 self.norm_method,
                 self.padding,
-                self.padding_mode
+                self.padding_mode,
+                self.act
             )
         ]
         for _ in range(num_blocks-1):
@@ -476,7 +513,8 @@ class Decoder(nn.Module):
                     self.GridSize,
                     self.norm_method,
                     self.padding,
-                    self.padding_mode
+                    self.padding_mode,
+                    self.act
                     )
                 )
         return nn.Sequential(*blocks)
@@ -498,6 +536,7 @@ class Adaptor(nn.Module):
         norm_method: Literal['batch', 'layer'] = 'batch', 
         padding='same',
         padding_mode='reflect',
+        act=nn.ReLU()
         ):
         super().__init__()
         self.in_channels = in_channels
@@ -506,6 +545,7 @@ class Adaptor(nn.Module):
         self.norm_method = norm_method
         self.padding = padding
         self.padding_mode = padding_mode
+        self.act = act
         self.layers = self._make_layer(Block, num_blocks, in_channels, out_channels)
         
     def forward(self, x):
@@ -520,13 +560,14 @@ class Adaptor(nn.Module):
         ):
         layers = [
             Block(
-                    in_channels,
-                    out_channels,
-                    self.GridSize,
-                    self.norm_method,
-                    self.padding,
-                    self.padding_mode
-                    )
+                in_channels,
+                out_channels,
+                self.GridSize,
+                self.norm_method,
+                self.padding,
+                self.padding_mode,
+                self.act
+                )
                 ]
 
         for _ in range(num_blocks-1):
@@ -537,10 +578,18 @@ class Adaptor(nn.Module):
                     self.GridSize,
                     self.norm_method,
                     self.padding,
-                    self.padding_mode
+                    self.padding_mode,
+                    self.act
                 )
             )
         return nn.Sequential(*layers)
+
+
+class Sin(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+    def forward(self, x):
+        return torch.sin(x)
 
 class SegModel(nn.Module):
     def __init__(
@@ -560,6 +609,7 @@ class SegModel(nn.Module):
         padding_mode='reflect',
         end_padding_mode = 'reflect',
         center=True,
+        act="relu"
         ):
         super().__init__()
         match Block:
@@ -580,6 +630,16 @@ class SegModel(nn.Module):
         self.pool_method = pool_method
         self.padding = padding
         self.padding_mode = padding_mode
+        self.act_name = act
+        match act:
+            case 'relu':
+               self.act = nn.ReLU()
+            case 'tanh':
+                self.act = nn.Tanh()
+            case 'sin':
+                self.act = Sin()
+            # case 'sin':
+                
 
         self.input_header = InputHeader(
             in_channels=in_channels,
@@ -587,7 +647,8 @@ class SegModel(nn.Module):
             GridSize=GridSize,
             norm_method=norm_method,
             padding=padding,
-            padding_mode=padding_mode
+            padding_mode=padding_mode,
+            act=self.act
         )
 
         self.encoder = Encoder(
@@ -600,6 +661,7 @@ class SegModel(nn.Module):
             pool_method,
             padding,
             padding_mode,
+            self.act
         )
 
         if center:
@@ -625,21 +687,23 @@ class SegModel(nn.Module):
             factor, 
             norm_method,
             padding,
-            padding_mode ,
+            padding_mode,
+            self.act
         )
         
         self.output_header = OutputHeader(
             in_channels=planes,
             classes=classes,
             padding=end_padding,
-            padding_mode=end_padding_mode
+            padding_mode=end_padding_mode,
+            act = self.act
         )
     
     @property
     def name(self):
         layer_name = "#".join([str(num) for num in self.layer_nums])
         adaptor_name = "#".join([str(num) for num in  self.adaptor_nums])
-        return f"{self.Block.__name__}-{layer_name}-{adaptor_name}-{self.factor}-{self.norm_method}-{self.pool_method}-{self.padding_mode}"
+        return f"{self.Block.__name__}-{self.planes}-{layer_name}-{self.factor}-{self.act_name}-{self.norm_method}-{self.pool_method}-{self.padding_mode}"
     
     def _make_adaptors(self):
         adaptors = []
@@ -656,6 +720,7 @@ class SegModel(nn.Module):
                     norm_method=self.norm_method,
                     padding=self.padding,
                     padding_mode=self.padding_mode,
+                    act=self.act
                 )
             )
         adaptors = nn.ModuleList(adaptors)

@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../')
+
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -213,7 +216,7 @@ class NConvTrainer(BaseTrainer):
 
 if __name__ == '__main__':
     mission_name = 'nlinear'
-    tag = 'JuF_test1'
+    tag = 'Ju'
     trainer = NConvTrainer(
         gd=0, maxiter=5, mu=0.1,
         picard_eps=1e-7, subitr_eps=1e-8, 
@@ -222,12 +225,21 @@ if __name__ == '__main__':
         area=((0,0), (1,1)), GridSize=128,
         trainN=10000, valN=100, batch_size=5,
         net_kwargs={
-            'model_name': 'varyunet',
-            'in_channels':1,
+            'model_name': 'segmodel',
+            'Block': "ResBottleNeck",
+            'planes':8,
+            'in_channels':2,
             'classes':1,
-            'features':8,
-            'layers':5,
-            'end_padding':'valid'
+            'GridSize':256,
+            'layer_nums':   [2, 2, 4, 4, 6],
+            'adaptor_nums': [2, 2, 4, 4, 6],
+            'factor':2,
+            'norm_method': 'layer',
+            'pool_method':'max',
+            'padding':'same',
+            'padding_mode':'replicate',
+            'end_padding_mode':'valid',
+
         },
         log_dir=f'./all_logs/{mission_name}',
         lr=1e-3, total_epochs=[150],

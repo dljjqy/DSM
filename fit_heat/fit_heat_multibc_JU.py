@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import torch
 import numpy as np
 import random
@@ -6,7 +8,7 @@ from MyPlot import multi_heat_draw_img as draw_img
 from utils import ChipLayout, layout2csv, coo2tensor
 from BaseTrainer import BaseTrainer
 from Generators import *
-from fit_heat.HeatMultibcDs import *
+from HeatMultibcDs import *
 
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import load_npz
@@ -103,13 +105,13 @@ class Trainer(BaseTrainer):
         self.B = []
 
         for bd_case in [0, 1, 2]:
-            A_np = load_npz(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
+            A_np = load_npz(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
             self.Anp.append(A_np)
             
             A_torch = coo2tensor(A_np.tocoo(), self.device, self.dtype)
             self.Atorch.append(A_torch)
 
-            b = np.load(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
+            b = np.load(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
             b = torch.from_numpy(b).to(self.dtype).to(self.device)
             self.B.append(b)
         
@@ -119,7 +121,7 @@ class Trainer(BaseTrainer):
         batched_A = []
         for c in bd_cases:
             c = c.item()
-            batched_A.append(torch.clone(torch.detach(self.Atorch[c])))
+            batched_A.append(torch.detach(self.Atorch[c]))
         batched_A = torch.stack(batched_A)
         generator = JacBatched(batched_A, self.dtype, self.device)
         monitor = BatchedMonitor(batched_A, self.dtype, self.device)
@@ -152,11 +154,13 @@ class Trainer(BaseTrainer):
     def train_step(self, data, layouts, bd_cases, maxiter):
         batch_size = layouts.shape[0]
 
+        self.config_optimizer(self.lr)
         # First, we need generator and B
         generator, monitor = self.init_generator_monitor(bd_cases)
         B = layouts.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
         B = B[..., None]
 
+        # # Inner Loop
         # make a initial prediction
         pre = self.net(data)
         for k in tqdm(range(self.max_steps_on_batch), desc='One Step Loop:', position=2, leave=False):
@@ -189,6 +193,7 @@ class Trainer(BaseTrainer):
                 break
             else:
                 pre = new_pre
+            self.lr_scheduler.step()
 
         return error, loss_val
 
@@ -236,7 +241,10 @@ class Trainer(BaseTrainer):
             error, loss_val = self.train_step(data, layouts, bd_cases, self.maxiter)
             errors.append(error)
         
-        self.lr_scheduler.step()
+            # self.lr_scheduler.step()
+
+            if self.train_global_idx+1 % 100 == 0:
+                self.max_subiter_steps = int(self.max_subiter_steps * 0.5)
 
         return np.array(error).mean()
             
@@ -278,52 +286,44 @@ if __name__ == "__main__":
     from SegModel import *
 
     GridSize = 128
-    mission_name = "heat_multibc"
     tag="JuC2"
 
     trainer = Trainer(
         method="jac",
         maxiter=5,
-        max_steps_on_batch=500,
-        convergence_error_eps=3e-5,
+        max_steps_on_batch=1000,
+        convergence_error_eps=1e-6,
         dtype=torch.float,
         device="cuda",
         area=((0, 0), (0.1, 0.1)),
         GridSize=GridSize,
         trainN=10000,
-        valN=20,
+        valN=10,
         batch_size=5,
-        net_kwargs=
-        {
+        net_kwargs={
             'model_name': 'segmodel',
-            "Block": 'ResBasic',
-            "planes": 8,
-            "in_channels": 2,
-            "classes": 1,
-            "GridSize": GridSize,
-            "layer_nums": [2, 2, 4, 6, 8],
-            "adaptor_nums": [2, 2, 4, 6, 8],
-            "factor": 2,
-            "norm_method": "layer",
-            "pool_method": "max",
-            "padding": "same",
-            "padding_mode": "replicate",
-            "end_padding_mode": "replicate",
+            'Block': "ResBottleNeck",
+            'planes':8,
+            'in_channels':2,
+            'classes':1,
+            'GridSize':GridSize,
+            'layer_nums':   [4, 4, 6, 6, 8],
+            'adaptor_nums': [4, 4, 6, 6, 8],
+            'factor':2,
+            'norm_method': 'layer',
+            'pool_method':'max',
+            'padding':'same',
+            'padding_mode':'reflect',
+            'end_padding_mode':'reflect',
+
         },
-        log_dir=f"./all_logs/{mission_name}",
+        log_dir=f"./all_logs",
         lr=1e-3,
         total_epochs=[150],
         tag=tag,
         loss_fn=nn.functional.mse_loss,
-        model_save_path=f"./model_save/{mission_name}",
-        hyper_params_save_path=f"./hyper_parameters/{mission_name}",
+        model_save_path=f"./model_save",
+        hyper_params_save_path=f"./hyper_parameters",
         )
     
     trainer.fit_loop()
-# {
-#     'model_name':'unet++',
-#     "encoder_name":'resnet18',
-#     "encoder_weights":None,
-#     "in_channels":5,
-#     "classes":1,
-#     },

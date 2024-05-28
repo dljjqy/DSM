@@ -3,6 +3,8 @@
 *.zip
 /*data
 */DLdata/
+*/TestData/
+
 */hyper_parameters/
 */model_save/
 */all_logs/

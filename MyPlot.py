@@ -20,7 +20,7 @@ def fig_ax_for_save(kwargs={}, name='', fontsize=20, height=10, width=10, ticks=
         ax.set_yticks([])
     return fig, ax
 
-def multi_cof_draw_img(name, pre, ans, cof, GridSize, a=1, levels=None):
+def multi_cof_draw_img(name, pre, ans, cof, GridSize, a=1, levels=None, cmap=cm.Spectral_r):
     pre = pre.reshape(GridSize, GridSize)
     ans = ans.reshape(GridSize, GridSize)
 
@@ -46,7 +46,7 @@ def multi_cof_draw_img(name, pre, ans, cof, GridSize, a=1, levels=None):
     cbar.ax.tick_params(labelsize=10)
 
     ax2.set_title(f'$Prediction$', fontsize=20)
-    surf_pre = ax2.plot_surface(xx, yy, pre, cmap=cm.Spectral_r,)
+    surf_pre = ax2.plot_surface(xx, yy, pre, cmap=cmap,)
     cbar=plt.colorbar(surf_pre, shrink=0.85, ax=ax2)
     cbar.ax.tick_params(labelsize=10)
 
@@ -69,7 +69,7 @@ def multi_cof_draw_img(name, pre, ans, cof, GridSize, a=1, levels=None):
     fig.tight_layout()
     return fig
 
-def multi_water_draw_img(name, f, boundary, pre, ans, GridSize, a=1, levels=None):
+def multi_water_draw_img(name, f, boundary, pre, ans, GridSize, a=1, levels=None, cmap=cm.Spectral_r):
     fig = plt.figure()
     fig.suptitle(name, fontsize=20)
     fig.set_figheight(20)
@@ -92,7 +92,7 @@ def multi_water_draw_img(name, f, boundary, pre, ans, GridSize, a=1, levels=None
     cbar.ax.tick_params(labelsize=10)
 
     ax2.set_title(f'$Prediction$', fontsize=20)
-    surf_pre = ax2.plot_surface(xx, yy, pre, cmap=cm.Spectral_r,)
+    surf_pre = ax2.plot_surface(xx, yy, pre, cmap=cmap,)
     cbar=plt.colorbar(surf_pre, shrink=0.85, ax=ax2)
     cbar.ax.tick_params(labelsize=10)
 
@@ -114,7 +114,7 @@ def multi_water_draw_img(name, f, boundary, pre, ans, GridSize, a=1, levels=None
     fig.tight_layout()
     return fig
 
-def multi_heat_draw_img(name, f, boundary, pre, ans, GridSize, a=0.1, levels=None):
+def multi_heat_draw_img(name, f, boundary, pre, ans, GridSize, a=0.1, levels=None, cmap=cm.Spectral_r):
     fig = plt.figure()
     fig.suptitle(name, fontsize=20)
     fig.set_figheight(20)
@@ -137,7 +137,7 @@ def multi_heat_draw_img(name, f, boundary, pre, ans, GridSize, a=0.1, levels=Non
     cbar.ax.tick_params(labelsize=10)
 
     ax2.set_title(f'$Prediction$', fontsize=20)
-    ctf_pre = ax2.contourf(xx, yy, np.abs(pre - ans), cmap=cm.Spectral_r, levels=50)
+    ctf_pre = ax2.contourf(xx, yy, np.abs(pre - ans), cmap=cmap, levels=50)
     cbar=plt.colorbar(ctf_pre, shrink=0.85, ax=ax2)
     cbar.ax.tick_params(labelsize=10)
 
@@ -159,7 +159,7 @@ def multi_heat_draw_img(name, f, boundary, pre, ans, GridSize, a=0.1, levels=Non
     fig.tight_layout()
     return fig
 
-def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=1, levels=None):
+def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=1, levels=None, cmap=cm.Spectral_r):
     fig = plt.figure()
     fig.suptitle(f"{name}-{mu:.3e}", fontsize=20)
     fig.set_figheight(20)
@@ -182,12 +182,12 @@ def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=1, levels=None):
     cbar.ax.tick_params(labelsize=10)
 
     ax2.set_title(f'$Prediction$', fontsize=20)
-    ctf_pre = ax2.contourf(xx, yy, pre, cmap=cm.Spectral_r, levels=50)
+    ctf_pre = ax2.contourf(xx, yy, pre, cmap=cmap, levels=50)
     cbar=plt.colorbar(ctf_pre, shrink=0.85, ax=ax2)
     cbar.ax.tick_params(labelsize=10)
 
     ax3.set_title(f'$Difference$', fontsize=20)
-    ctf_diff = ax3.contourf(xx, yy, np.abs(pre - ans), cmap=cm.Spectral_r, levels=50)
+    ctf_diff = ax3.contourf(xx, yy, np.abs(pre - ans), cmap=cmap, levels=50)
     cbar=plt.colorbar(ctf_diff, shrink=0.85, ax=ax3)
     cbar.ax.tick_params(labelsize=10)
 
@@ -204,60 +204,73 @@ def multi_nonlinear_draw_img(name, f, mu, pre, ans, GridSize, a=1, levels=None):
     fig.tight_layout()
     return fig
 
-def save_img_force(path, f, name='force', vmin=None, vmax=None):
+def save_img_force(path, f, name='force', vmin=None, vmax=None, cmap=cm.Spectral_r):
     # Plot force function f
-    fig, ax = fig_ax_for_save(ticks=False, axis_label=False)
+    fig, ax = fig_ax_for_save(height=10, width=10,ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
     if vmin is None or vmax is None:  
-        im = ax.imshow(f[::-1])
+        im = ax.imshow(f[::-1], cmap=cmap)
     else:
-        im = ax.imshow(f[::-1], vmin=vmin, vmax=vmax)
+        im = ax.imshow(f[::-1], vmin=vmin, vmax=vmax, cmap=cmap)
 
+    # cbar=plt.colorbar(im, shrink=0.85, ax=ax)
     divider = make_axes_locatable(ax)
-    cax = divider.append_axes("top", size="4%", pad=0.1)
-    cbar=plt.colorbar(im, shrink=0.8, ax=ax, cax=cax, orientation='horizontal', location='top')
+    cax = divider.new_horizontal(size="2.5%", pad=0.1)
+    fig.add_axes(cax)
+    cbar = fig.colorbar(im, cax=cax, orientation="vertical")
+    # cbar.ax.tick_params(labelsize=10)
     cbar.ax.tick_params(labelsize=10)
     fig.savefig(f"{path}/{name}.png", bbox_inches='tight')
     plt.close(fig)
 
-def save_surf(path, z, xx, yy, name='surf_pre'):
+def save_surf(path, z, xx, yy, name='surf_pre', cmap=cm.Spectral_r):
     # plot surfaces of pre and ans
-    fig, ax = fig_ax_for_save({"projection": "3d"})
-    surf_pre = ax.plot_surface(xx, yy, z, cmap=cm.Spectral_r,)
+    fig, ax = fig_ax_for_save({"projection": "3d"},height=10, width=10,)
+    surf_pre = ax.plot_surface(xx, yy, z, cmap=cmap,)
     cbar=plt.colorbar(surf_pre, shrink=0.85, ax=ax)
     cbar.ax.tick_params(labelsize=10)
     fig.savefig(f"{path}/{name}.png", bbox_inches='tight')
     plt.close(fig)
 
-def save_ctf(path, pre, ans, xx, yy, vmin=None, vmax=None):
+def save_ctf(path, pre, ans, xx, yy, vmin=None, vmax=None, cmap=cm.Spectral_r):
     # plot contourf of difference between real answer and prediction
-    fig, ax = fig_ax_for_save({}, ticks=False, axis_label=False)
+    fig, ax = fig_ax_for_save({},height=10, width=10, ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
     if vmin is None or vmax is None:  
-        ct = ax.contourf(xx, yy, np.abs(ans - pre), cmap=cm.Spectral_r, levels=50)
+        ctf = ax.contourf(xx, yy, np.abs(ans - pre), cmap=cmap, levels=50)
     else:
-        ct = ax.contourf(xx, yy, np.abs(ans - pre), cmap=cm.Spectral_r, levels=50, vmin=vmin, vmax=vmax)
+        ctf = ax.contourf(xx, yy, np.abs(ans - pre), cmap=cmap, levels=50, vmin=vmin, vmax=vmax)
+    
     divider = make_axes_locatable(ax)
-    cax = divider.append_axes("top", size="4%", pad=0.1)
-    cbar=plt.colorbar(ct, shrink=0.8, ax=ax, cax=cax, orientation='horizontal', location='top')
-
-    cbar.ax.tick_params(labelsize=10)    
+    cax = divider.new_horizontal(size="2.5%", pad=0.1)
+    fig.add_axes(cax)
+    cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
+    # cbar=plt.colorbar(ctf, shrink=0.85, ax=ax)
+    cbar.ax.tick_params(labelsize=10)
     fig.savefig(f"{path}/ctf_diff.png", bbox_inches='tight')
     plt.close(fig)
 
     # plot contourf of pre and ref
-    fig, ax = fig_ax_for_save({}, ticks=False, axis_label=False)
+    fig, ax = fig_ax_for_save({}, height=10, width=10,ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
-    ctf = ax.contourf(xx, yy, pre, alpha=1, cmap=cm.Spectral_r, levels=50)
-    cbar=plt.colorbar(ctf, shrink=0.85, ax=ax)
+    ctf = ax.contourf(xx, yy, pre, alpha=1, cmap=cmap, levels=50)
+    # cbar=plt.colorbar(ctf, shrink=0.85, ax=ax)
+    # cbar = fig.colorbar(ctf, orientation="vertical", pad=0.1)
+    divider = make_axes_locatable(ax)
+    cax = divider.new_horizontal(size="2.5%", pad=0.1)
+    fig.add_axes(cax)
+    cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
     cbar.ax.tick_params(labelsize=10)
     fig.savefig(f"{path}/ctf_pre.png", bbox_inches='tight')
     plt.close(fig)
 
-    fig, ax = fig_ax_for_save({}, ticks=False, axis_label=False)
+    fig, ax = fig_ax_for_save({},height=10, width=10, ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
-    ctf = ax.contourf(xx, yy, ans, alpha=1, cmap=cm.Spectral_r, levels=50)
-    cbar=plt.colorbar(ctf, shrink=0.85, ax=ax)
+    ctf = ax.contourf(xx, yy, ans, alpha=1, cmap=cmap, levels=50)
+    divider = make_axes_locatable(ax)
+    cax = divider.new_horizontal(size="2.5%", pad=0.1)
+    fig.add_axes(cax)
+    cbar = fig.colorbar(ctf, cax=cax, orientation="vertical" )
     cbar.ax.tick_params(labelsize=10)
     fig.savefig(f"{path}/ctf_ref.png", bbox_inches='tight')
     plt.close(fig)
@@ -273,13 +286,17 @@ def save_contour(path, pre, ans, xx, yy, levels):
     ct2 = ax.contour(xx, yy, ans, colors='b', linestyles='solid', linewidths=2, levels=levels)
     ax.clabel(ct1, inline=False, fontsize=20)
     ax.clabel(ct2, inline=False, fontsize=20)
+    # divider = make_axes_locatable(ax)
+    # cax = divider.new_horizontal(size="2.5%", pad=0.1)
+    # fig.add_axes(cax,)
+
     blue_line = mlines.Line2D([], [], color='blue', markersize=20, label='ref')
     red_line = mlines.Line2D([], [], color='red', markersize=20, label='pre')
     ax.legend(handles=[blue_line, red_line], fontsize=16 )
     fig.savefig(f"{path}/ct.png", bbox_inches='tight')
     plt.close(fig)
 
-def save_img(path, f, pre, ans, xx, yy, levels=None):
+def save_img(path, f, pre, ans, xx, yy, levels=None, cmap=cm.Spectral_r):
     p = Path(path)
     if not p.is_dir(): p.mkdir(parents=True)
 

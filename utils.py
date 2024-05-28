@@ -14,6 +14,21 @@ from FVM.src.Problem import *
 import numpy as np
 from scipy.stats import multivariate_normal
 
+def set_seed(seed):
+    # Set seed for NumPy
+    np.random.seed(seed)
+    
+    # Set seed for PyTorch
+    torch.manual_seed(seed)
+    
+    # If using CUDA
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU
+    
+    # Ensure that CUDA operations are deterministic
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
 def hard_encode(x, gd):
     y = F.pad(x, (1, 1, 1, 1), 'constant', value=gd)
     return y
@@ -213,12 +228,15 @@ def fd_solve_nlinear(GridSize, area, mu, center=(0.5, 0.5), Picard_maxiter=1000)
         delta = np.linalg.norm(newu - u0)
         error = ((newA @ u0 - b)**2 * h**2).sum()
         error = np.linalg.norm(newA @ u0 - b)
-        print(f"Itr: {i}\t Delta: {delta:.3e}\t Error: {error:.3e}\t")
+        # print(f"Itr: {i}\t Delta: {delta:.3e}\t Error: {error:.3e}\t")
 
         if delta < 1e-7 or error < 1e-7:
             break
         else:
             u0, A0 = newu, newA
+            if i == Picard_maxiter - 1:
+                print('Warning, May not converge')
+                print(f"Itr: {i}\t Delta: {delta:.3e}\t Error: {error:.3e}\t")
     return newu.reshape(GridSize, GridSize)
 
 def fvm_solve_nlinear(GridSize, area, mu, center=(0.5, 0.5), Picard_maxiter=1000):
@@ -252,7 +270,7 @@ def fvm_solve_nlinear(GridSize, area, mu, center=(0.5, 0.5), Picard_maxiter=1000
     return newu.reshape(GridSize, GridSize)
 
 def normal(x, y, h, mean=[0, 0]):
-    var = np.diag([0.5] * 2) * h**2
+    var = np.eye(2) * h**2
     pos = np.dstack((x, y))
     rv = multivariate_normal(mean, var)
     return rv.pdf(pos)

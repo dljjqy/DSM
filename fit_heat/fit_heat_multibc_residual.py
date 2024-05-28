@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 import torch
 import numpy as np
 import random
@@ -6,7 +8,7 @@ from MyPlot import multi_heat_draw_img as draw_img
 from utils import ChipLayout, layout2csv, coo2tensor
 from BaseTrainer import BaseTrainer
 from Generators import *
-from fit_heat.HeatMultibcDs import *
+from HeatMultibcDs import *
 
 from scipy.sparse.linalg import spsolve
 from scipy.sparse import load_npz
@@ -38,7 +40,7 @@ class Trainer(BaseTrainer):
 
     def reboot(self):
         self.config_optimizer(self.lr)
-        self.init_generator_monitor()
+        # self.init_generator_monitor()
         # self.init_traindl()
         # self.init_valdl()
 
@@ -98,13 +100,13 @@ class Trainer(BaseTrainer):
         self.B = []
 
         for bd_case in [0, 1, 2]:
-            A_np = load_npz(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
+            A_np = load_npz(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
             self.Anp.append(A_np)
             
             A_torch = coo2tensor(A_np.tocoo(), self.device, self.dtype)
             self.Atorch.append(A_torch)
 
-            b = np.load(f'./DLdata/heat/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
+            b = np.load(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
             b = torch.from_numpy(b).to(self.dtype).to(self.device)
             self.B.append(b)
         
@@ -149,15 +151,14 @@ class Trainer(BaseTrainer):
         batch_size = layouts.shape[0]
         
         # First, we need generator and B
-        monitor = self.init_generator_monitor(bd_cases)
+        monitor = self.init_monitor(bd_cases)
         B = layouts.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
         B = B[..., None]
         
         # Prediction
-        pre = self.net(data)
+        pre = self.net(data) + 298
 
-        # Generate the label by Jac
-        loss = monitor(pre, B).item()
+        loss = monitor(pre, B)
         
         # Backpropagation
         self.optimizer.zero_grad()
@@ -166,7 +167,6 @@ class Trainer(BaseTrainer):
 
         loss_val = loss.item()
         self.writer.add_scalar("Train-ResidualLoss", loss_val, self.train_global_idx)
-        # self.writer.add_scalar("Train-Error", error, self.train_global_idx)
         self.train_global_idx += 1
 
         return loss_val
@@ -175,12 +175,12 @@ class Trainer(BaseTrainer):
         batch_size = layout.shape[0]
 
         # Get generator and monitor
-        monitor = self.init_generator_monitor(bd_cases)
+        monitor = self.init_monitor(bd_cases)
         B = layout.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
         B = B[..., None]
 
         # Prediction
-        pre = self.net(data)
+        pre = self.net(data) + 298
         loss_val = monitor(pre, B).item()
 
         # # Get Real ans
@@ -251,8 +251,8 @@ class Trainer(BaseTrainer):
 if __name__ == "__main__":
     from torch.nn.functional import mse_loss
     GridSize = 128
-    mission_name = "heat_multibc"
-    tag = "ResidualC2"
+    # mission_name = "heat_multibc"
+    tag = "ResidualC2Plus298"
 
     trainer = Trainer(
         method="jac",
@@ -280,14 +280,15 @@ if __name__ == "__main__":
             "padding": "same",
             "padding_mode": "reflect",
             "end_padding_mode": "reflect",
+            "act":"tanh",
         },
-        log_dir=f"./all_logs/{mission_name}",
+        log_dir=f"./all_logs",
         lr=1e-3,
         total_epochs=[180],
         tag=tag,
         loss_fn=mse_loss,
-        model_save_path=f"./model_save/{mission_name}",
-        hyper_params_save_path=f"./hyper_parameters/{mission_name}",
+        model_save_path=f"./model_save",
+        hyper_params_save_path=f"./hyper_parameters",
         )
     
     trainer.fit_loop()

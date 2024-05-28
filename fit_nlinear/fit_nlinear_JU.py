@@ -1,3 +1,6 @@
+import sys
+sys.path.append('../')
+
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -58,7 +61,7 @@ class C2MuValDs(Dataset):
         )
         self.area = area
 
-        U = np.load(f"DLdata/nlinear/{GridSize}/U.npy")
+        U = np.load(f"DLdata/{GridSize}/U.npy")
         self.U = torch.from_numpy(U).float()
 
     def __len__(self):
@@ -282,7 +285,7 @@ class NConvTrainer(BaseTrainer):
                 self.picard_global_step += 1
 
                 old_pre = new_pre
-                if picard_error <= self.picard_eps and picard_loss <= self.picard_eps:
+                if picard_error <= self.picard_eps or picard_loss <= self.picard_eps:
                     break
         return picard_error
 
@@ -352,9 +355,8 @@ class NConvTrainer(BaseTrainer):
 
 
 if __name__ == "__main__":
-    mission_name = "nlinear"
-    GridSize = 256
-    tag = "JuMu"
+    GridSize = 128
+    tag = "Ju"
     trainer = NConvTrainer(
         gd=0,
         maxiter=5,
@@ -372,7 +374,7 @@ if __name__ == "__main__":
         net_kwargs={
             "model_name": "segmodel",
             "Block": "ResBottleNeck",
-            "planes": 6,
+            "planes": 8,
             "in_channels": 2,
             "classes": 1,
             "GridSize": GridSize,
@@ -380,18 +382,18 @@ if __name__ == "__main__":
             "adaptor_nums": [2, 2, 4, 6, 6],
             "factor": 2,
             "norm_method": "layer",
-            "pool_method": "max",
+            "pool_method": "avg",
             "padding": "same",
             "padding_mode": "replicate",
             "end_padding_mode": "zeros",
             "end_padding": "valid",
         },
-        log_dir=f"./all_logs/{mission_name}",
+        log_dir=f"./all_logs",
         lr=1e-3,
         total_epochs=[150],
         tag=tag,
         loss_fn=F.mse_loss,
-        model_save_path=f"./model_save/{mission_name}",
-        hyper_params_save_path=f"./hyper_parameters/{mission_name}",
+        model_save_path=f"./model_save",
+        hyper_params_save_path=f"./hyper_parameters",
     )
     trainer.fit_loop()

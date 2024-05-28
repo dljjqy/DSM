@@ -96,6 +96,20 @@ class PinnGenerator(torch.nn.Module):
 				y = self.jac_step(x, y, f, mu)
 		return y
 
+class ICDGenerator(nn.Module):
+	def __init__(self, GridSize, dtype, device, maxiter, area):
+		self.GridSize = GridSize
+		(left, bottom), (right, top) = area
+		self.h = (right - left) / (GridSize - 1)
+		self.dtype = dtype
+		self.device = device
+		self.maxiter = maxiter
+	
+	def _get_kernel(self, k):
+		k = torch.tensor(k, requires_grad=True)
+		k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).to(self.dtype).to(self.device)
+		return k
+
 class PinnGenerator_Ju(torch.nn.Module):
 	def __init__(self, batch_size, GridSize, dtype, device, maxiter, area, init_kappa=None, mu=0.1, gd=0):
 		super().__init__()

@@ -26,7 +26,11 @@ class BaseTester:
 		self.img_save_path = f"{img_save_path}/{GridSize}"
 	
 	def l2(self, pre, ans):
-		return np.sqrt(((pre - ans)**2 * self.h**2).sum())
+		diff = (pre - ans) ** 2 * self.h**2
+		l2_errors = torch.sqrt(torch.sum(diff, dim=(1, 2, 3)))
+		# print(l2_errors.shape)
+
+		return l2_errors.mean() 
 			
 	def load_kwargs(self, exp_name):
 		with open(f"{self.hyper_parameters_save_path}/{exp_name}.json") as file:
