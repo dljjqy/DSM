@@ -17,7 +17,6 @@ def hard_encode(x, gd):
     y = F.pad(x, (1, 1, 1, 1), "constant", value=gd)
     return y
 
-
 class C2MuTrainDs(Dataset):
     def __init__(self, GridSize, dtype, device, trainN, area=((0, 0), (1, 1))):
         self.dtype = dtype
@@ -37,11 +36,8 @@ class C2MuTrainDs(Dataset):
         return self.trainN
 
     def __getitem__(self, index):
-        f = (
-            force(self.xx, self.yy, self.center_points[index])
-            .to(self.dtype)
-            .to(self.device)
-        )
+        f = force(self.xx, self.yy, self.center_points[index]).to(self.dtype).to(self.device)
+        
         mu = torch.ones_like(f) * uniform(0.1, 1)
         data = torch.stack([f, mu]).to(self.dtype).to(self.device)
         return data, f[None, ...], mu[None, ...]
@@ -68,11 +64,7 @@ class C2MuValDs(Dataset):
         return len(self.center_points)
 
     def __getitem__(self, index):
-        f = (
-            force(self.xx, self.yy, self.center_points[index])
-            .to(self.dtype)
-            .to(self.device)
-        )
+        f = force(self.xx, self.yy, self.center_points[index]).to(self.dtype).to(self.device)
         mu = torch.ones_like(f) * 0.1
         data = torch.stack([f, mu]).to(self.dtype).to(self.device)
 
@@ -148,6 +140,7 @@ class NConvTrainer(BaseTrainer):
         self.h = 1.0 / (self.GridSize - 1)
         self.l2_loss = L2Loss(self.h)
         self.picard_global_step = 0
+        self.global_data_nums = 0
         # self.init_generator()
 
     @property
@@ -236,7 +229,7 @@ class NConvTrainer(BaseTrainer):
     def picard_train_step(self, x, f, mu, generator):
         # The single one step of picard iteration is used for solving a linear PDE
         # The linear sub-iteration JAC is used to optimize the network
-        for _ in tqdm(
+        for i in tqdm(
             range(self.max_subitr_step),
             position=3,
             leave=False,
@@ -247,25 +240,26 @@ class NConvTrainer(BaseTrainer):
             with torch.no_grad():
                 self.train_global_idx += 1
                 self.writer.add_scalar(
-                    "TrainSubitrLoss", train_loss.item(), self.train_global_idx
+                    "Train-InnerLoopLoss", train_loss.item(), self.train_global_idx
                 )
 
                 subitr_error = self.l2_loss(pre, label).item()
                 if subitr_error < self.subitr_eps:
                     break
-        return hard_encode(pre, self.gd)
+        return hard_encode(pre, self.gd), i+1
 
     def picard_loop(self, x, f, mu, old_pre):
         generator = self.init_generator(old_pre)
-
+        inner_loop_steps = []
+            
         for i in tqdm(
             range(self.max_picard_step),
             position=2,
             leave=False,
             desc="Picard Iteration:",
-        ):
-            new_pre = self.picard_train_step(x, f, mu, generator)
-
+            ):
+            new_pre, inner_loop_step = self.picard_train_step(x, f, mu, generator)
+            inner_loop_steps.append(inner_loop_step)
             with torch.no_grad():
                 picard_error = self.l2_loss(old_pre, new_pre).item()
 
@@ -277,17 +271,19 @@ class NConvTrainer(BaseTrainer):
                 picard_loss = self.loss_fn(label, pre).item()
 
                 self.writer.add_scalar(
-                    "Train-PicardError", picard_error, self.picard_global_step
+                    "Train-PicardL2", picard_error, self.picard_global_step
                 )
                 self.writer.add_scalar(
-                    "Train-PicardLoss", picard_loss, self.picard_global_step
+                    "Train-PicardMSE", picard_loss, self.picard_global_step
                 )
+                
                 self.picard_global_step += 1
 
                 old_pre = new_pre
-                if picard_error <= self.picard_eps or picard_loss <= self.picard_eps:
-                    break
-        return picard_error
+                # if picard_error <= self.picard_eps or picard_loss <= self.picard_eps:
+                #     break
+                
+        return picard_error, i+1, sum(inner_loop_steps)
 
     def train_loop(self):
         self.net.train()
@@ -300,9 +296,7 @@ class NConvTrainer(BaseTrainer):
             with torch.no_grad():
                 if self.global_epoch_idx == 0:
                     old_pre = (
-                        torch.ones((self.batch_size, 1, self.GridSize, self.GridSize))
-                        .to(self.dtype)
-                        .to(self.device)
+                        torch.ones((self.batch_size, 1, self.GridSize, self.GridSize)).to(self.dtype).to(self.device)
                     )
                 else:
                     old_pre = torch.clone(
@@ -310,9 +304,17 @@ class NConvTrainer(BaseTrainer):
                     )
 
             # Start fitting the next picard loop by given the data, force and mu
-            picard_loss = self.picard_loop(x, f, mu, old_pre=old_pre)
-
+            picard_loss, picard_iteration_steps, summed_inner_loop_steps = self.picard_loop(x, f, mu, old_pre=old_pre)
             train_picard_loss.append(picard_loss)
+            self.writer.add_scalar(
+                "Train-PicardIterationSteps", picard_iteration_steps, self.global_data_nums
+            )
+            self.writer.add_scalar(
+                "Train-SummedInnerLoopSteps", summed_inner_loop_steps, self.global_data_nums
+            )
+
+            self.global_data_nums += 1
+        
         self.lr_scheduler.step()
         return np.array(train_picard_loss).mean()
 
@@ -356,14 +358,18 @@ class NConvTrainer(BaseTrainer):
 
 if __name__ == "__main__":
     GridSize = 128
-    tag = "Ju"
+    max_inner_loop_step = 1
+
+    max_picard_step = 5
+    
+    tag = f"Picard={max_picard_step}"
     trainer = NConvTrainer(
         gd=0,
-        maxiter=5,
-        picard_eps=1e-7,
+        maxiter=10,
+        picard_eps=1e-8,
         subitr_eps=5e-9,
-        max_subitr_step=800,
-        max_picard_step=100,
+        max_subitr_step=max_inner_loop_step,
+        max_picard_step=max_picard_step,
         dtype=torch.float,
         device="cuda",
         area=((0, 0), (1, 1)),
@@ -378,15 +384,16 @@ if __name__ == "__main__":
             "in_channels": 2,
             "classes": 1,
             "GridSize": GridSize,
-            "layer_nums": [2, 2, 4, 6, 6],
-            "adaptor_nums": [2, 2, 4, 6, 6],
+            "layer_nums": [4, 4, 6, 6, 8],
+            "adaptor_nums": [4, 4, 6, 6, 8],
             "factor": 2,
             "norm_method": "layer",
             "pool_method": "avg",
             "padding": "same",
-            "padding_mode": "replicate",
+            "padding_mode": "zeros",
             "end_padding_mode": "zeros",
             "end_padding": "valid",
+            "act":"relu"
         },
         log_dir=f"./all_logs",
         lr=1e-3,

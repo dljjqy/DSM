@@ -191,6 +191,7 @@ if __name__ == '__main__':
             'pool_method':'max',
             'padding':'same',
             'padding_mode':'reflect',
+            'end_padding':'same',
             'end_padding_mode':'reflect',
         },
         log_dir=f'./all_logs',

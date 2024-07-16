@@ -1,3 +1,7 @@
+# Ablation study operated on a parametric PDE
+# (Need to redo)
+# Used to test the influence of iterative linear solver and maximal iterative times 'K'
+
 import sys
 sys.path.append('../')
 
@@ -19,46 +23,114 @@ def hard_encode(x, gd):
 	y = F.pad(x, (1, 1, 1, 1), "constant", value=gd)
 	return y
 
+# OldTrainDs is designed for the problem with random diffusive coefficient
+# class OldTrainDs(Dataset):
+# 	def __init__(self, GridSize, dtype, device, trainN, area=((0, 0), (1, 1))):
+# 		self.GridSize = GridSize
+# 		self.dtype = dtype
+# 		self.device = device
+# 		(left, bottom), (right, top) = area
+# 		self.h = (right - left) / (GridSize - 1)
+# 		xx, yy = np.meshgrid(
+# 			np.linspace(left, right, GridSize), np.linspace(bottom, top, GridSize)
+# 		)
+# 		self.force = normal(xx, yy, self.h, [(right-left)/2, (top - bottom)/2])
+# 		# self.force = f0(xx, yy, k=4)
+# 		# self.xx, self.yy = torch.from_numpy(xx), torch.from_numpy(yy)
+# 		self.area = area
+# 		self.trainN = trainN
+		
+# 	def __len__(self):
+# 		return self.trainN
+
+# 	def __getitem__(self, index):
+# 		force = torch.from_numpy(self.force).to(self.dtype).to(self.device)[None, ...]
+		
+# 		kappa = np.random.uniform(0.1, 2, (self.GridSize, self.GridSize))
+# 		kappa = torch.from_numpy(kappa).to(self.dtype).to(self.device)[None, ...]
+# 		data = torch.clone(torch.detach(kappa))
+# 		return data, force, kappa
+	
+# class OldValDs(OldTrainDs):
+# 	def __getitem__(self, index):
+# 		kappa = np.random.uniform(0.1, 2, (self.GridSize, self.GridSize))
+# 		A = reaction_A(self.GridSize, kappa).tocsr()
+# 		b = reaction_b_dir(self.force, 0, self.h)
+# 		ans = spsolve(A, b).reshape(self.GridSize, self.GridSize)
+		
+# 		force = torch.from_numpy(self.force).to(self.dtype).to(self.device)[None, ...]
+		
+# 		kappa = torch.from_numpy(kappa).to(self.dtype).to(self.device)[None, ...]
+# 		data = torch.clone(torch.detach(kappa))
+# 		ans = torch.from_numpy(ans).to(self.dtype).to(self.device)[None, ...]
+
+# 		return data, force, kappa, ans
+	
+# TrainDs is designed for the problem with parametric diffusive coefficient
+# kappa = exp(-\mu (x**2 + y**2)), where \mu \in [0, 1]
+
 class TrainDs(Dataset):
-	def __init__(self, GridSize, dtype, device, trainN, area=((0, 0), (1, 1))):
+	def __init__(self, GridSize, dtype, device, trainN, area=((-1, -1), (1, 1))):
 		self.GridSize = GridSize
 		self.dtype = dtype
 		self.device = device
-		(left, bottom), (right, top) = area
-		self.h = (right - left) / (GridSize - 1)
-		xx, yy = np.meshgrid(
-			np.linspace(left, right, GridSize), np.linspace(bottom, top, GridSize)
-		)
-		self.force = normal(xx, yy, self.h, [(right-left)/2, (top - bottom)/2])
-		# self.force = f0(xx, yy, k=4)
-		# self.xx, self.yy = torch.from_numpy(xx), torch.from_numpy(yy)
 		self.area = area
 		self.trainN = trainN
+		
+		(left, bottom), (right, top) = area
+		self.h = (right - left) / (GridSize - 1)
+
+		self.xx, self.yy = np.meshgrid(
+			np.linspace(left, right, GridSize), np.linspace(bottom, top, GridSize)
+		)
+		self.mus = np.random.uniform(0, 1, trainN)
+		self.force = np.ones((GridSize, GridSize))
+		# self.force = normal(self.xx, self.yy, self.h, [(right-left)/2, (top - bottom)/2])
+
 		
 	def __len__(self):
 		return self.trainN
 
+	def kappa(self, mu):
+		return np.exp(-mu * (self.xx ** 2 + self.yy**2))
+
 	def __getitem__(self, index):
+		mu = self.mus[index]
 		force = torch.from_numpy(self.force).to(self.dtype).to(self.device)[None, ...]
-		
-		kappa = np.random.uniform(0.1, 2, (self.GridSize, self.GridSize))
-		kappa = torch.from_numpy(kappa).to(self.dtype).to(self.device)[None, ...]
+		kappa = torch.from_numpy(self.kappa(mu)).to(self.dtype).to(self.device)[None, ...]
 		data = torch.clone(torch.detach(kappa))
 		return data, force, kappa
 	
-class ValDs(TrainDs):
-	def __getitem__(self, index):
-		kappa = np.random.uniform(0.1, 2, (self.GridSize, self.GridSize))
-		A = reaction_A(self.GridSize, kappa).tocsr()
-		b = reaction_b_dir(self.force, 0, self.h)
-		ans = spsolve(A, b).reshape(self.GridSize, self.GridSize)
-		
-		force = torch.from_numpy(self.force).to(self.dtype).to(self.device)[None, ...]
-		
-		kappa = torch.from_numpy(kappa).to(self.dtype).to(self.device)[None, ...]
-		data = torch.clone(torch.detach(kappa))
-		ans = torch.from_numpy(ans).to(self.dtype).to(self.device)[None, ...]
+class ValDs:
+	def __init__(self, GridSize, dtype, device, valN, area=((-1, -1), (1, 1))):
+		self.GridSize = GridSize
+		self.dtype = dtype
+		self.device = device
+		self.area = area
+		self.valN = valN
 
+		self.kappas = np.load(f'./DLData/{GridSize}/Demo2/ValKappa.npy')
+		self.sols = np.load(f'./DLData/{GridSize}/Demo2/ValSol.npy')
+		self.force = np.ones((GridSize, GridSize))
+		
+
+		(left, bottom), (right, top) = area
+		self.h = (right - left) / (GridSize - 1)
+		self.xx, self.yy = np.meshgrid(
+			np.linspace(left, right, GridSize), np.linspace(bottom, top, GridSize)
+		)
+
+	def __len__(self):
+		return self.valN
+
+	def __getitem__(self, index):
+		kappa = self.kappas[index]
+		ans = self.sols[index]
+
+		force = torch.from_numpy(self.force).to(self.dtype).to(self.device)[None, ...]
+		kappa = torch.from_numpy(kappa).to(self.dtype).to(self.device)[None, ...]
+		ans = torch.from_numpy(ans).to(self.dtype).to(self.device)[None, ...]
+		data = torch.clone(torch.detach(kappa))
 		return data, force, kappa, ans
 		
 class JacGenerator(torch.nn.Module):
@@ -171,7 +243,6 @@ class MatDescentGenerator(JacGenerator):
 			for i in range(self.maxiter):
 				u = self.step(A, B, u)
 		return u.reshape(self.batch_size, 1, self.GridSize, self.GridSize)
-
 		
 class Trainer(BaseTrainer):
 	def __init__(
@@ -342,10 +413,10 @@ if __name__ == "__main__":
 			method=f'Jac-{k}',
 			dtype=torch.float,
 			device="cuda",
-			area=((0, 0), (1, 1)),
+			area=((-1, -1), (1, 1)),
 			GridSize=GridSize,
 			trainN=trainN,
-			valN=10,
+			valN=100,
 			batch_size=5,
 			net_kwargs={
 				"model_name": "segmodel",
@@ -366,7 +437,7 @@ if __name__ == "__main__":
 				"act": "tanh"
 			},
 			log_dir=f"./all_logs",
-			lr=1e-3,
+			lr=1e-2,
 			total_epochs=[150],
 			tag=tag,
 			loss_fn=F.mse_loss,

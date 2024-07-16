@@ -43,7 +43,7 @@ class C1FVDs(Dataset):
         self.center_points = list(product(torch.arange(0.1, 1, 0.1), np.arange(0.1, 1, 0.1)))
         self.area = area
 
-        U = np.load(f'DLdata/nlinear/{GridSize}/U.npy')
+        U = np.load(f'DLdata/{GridSize}/U.npy')
         self.U = torch.from_numpy(U).float()
 
     def __len__(self):
@@ -94,7 +94,7 @@ class C3FVDs(Dataset):
         self.center_points = list(product(torch.arange(0.1, 1, 0.1), np.arange(0.1, 1, 0.1)))
         self.area = area
 
-        U = np.load(f'DLdata/nlinear/{GridSize}/U.npy')
+        U = np.load(f'DLdata/{GridSize}/U.npy')
         self.U = torch.from_numpy(U).float()
 
     def __len__(self):
@@ -145,7 +145,7 @@ class C2MuVDs(Dataset):
         self.center_points = list(product(torch.arange(0.1, 1, 0.1), np.arange(0.1, 1, 0.1)))
         self.area = area
 
-        U = np.load(f'DLdata/nlinear/{GridSize}/U.npy')
+        U = np.load(f'DLdata/{GridSize}/U.npy')
         self.U = torch.from_numpy(U).float()
 
     def __len__(self):
@@ -198,7 +198,7 @@ class C4MuVDs(Dataset):
         self.center_points = list(product(torch.arange(0.1, 1, 0.1), np.arange(0.1, 1, 0.1)))
         self.area = area
 
-        U = np.load(f'DLdata/nlinear/{GridSize}/U.npy')
+        U = np.load(f'DLdata/{GridSize}/U.npy')
         self.U = torch.from_numpy(U).float()
 
     def __len__(self):

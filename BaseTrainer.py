@@ -86,8 +86,9 @@ class BaseTrainer:
     def init_network(self, kwargs):
         net_kwargs = kwargs.copy()
         name = net_kwargs.pop('model_name')
-        self.net = CNN(name, net_kwargs, self.dtype, self.device)
-
+        net = CNN(name, net_kwargs, self.dtype, self.device)
+        self.net = net.to(self.dtype)
+        
     def config_optimizer(self, lr):
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
         self.optimizer.zero_grad()

@@ -1,3 +1,6 @@
+# Ablation study operated on the PDE without parameters
+# It is used to test the performance of the UNet with different optimization methods, activation functions and the loss function.
+
 import sys
 
 import torch.utils
@@ -29,7 +32,7 @@ class ResidualLoss(torch.nn.Module):
 		self.loss_fn = loss_fn
 		self.gd = gd
 
-		self.k = self._get_kernel([[0, -0.25, 0], [-0.25, 1, -0.25], [0, -0.25, 0]])
+		self.k = self._get_kernel([[0, -1, 0], [-1, 4, -1], [0, -1, 0]])
 		self.hard_encode = lambda x: hard_encode(x, self.gd)
 
 	def _get_kernel(self, k):
@@ -40,7 +43,7 @@ class ResidualLoss(torch.nn.Module):
 	def forward(self, pre, f, ans):
 		u = self.hard_encode(pre)
 		y = F.conv2d(u, self.k) 
-		return self.loss_fn(y, 0.25 * self.h**2 * f[..., 1:-1, 1:-1])
+		return self.loss_fn(y, self.h**2 * f[..., 1:-1, 1:-1])
 	
 class MatrixResidualLoss(torch.nn.Module):
 	def __init__(self, dtype, device, GridSize, h, loss_fn, maxiter=5, gd=0):
@@ -62,8 +65,9 @@ class MatrixResidualLoss(torch.nn.Module):
 			f = f.cpu().numpy().squeeze()
 			b = reaction_b_dir(f, 0, self.h)
 			b = torch.from_numpy(b).to(self.device).to(self.dtype)
-		r = (b - self.A @ u).squeeze()
-		return torch.dot(r, r)
+		# r = (self.A @ u - b).squeeze()
+		# return self.loss_fn(r, torch.zeros_like(r))
+		return self.loss_fn(self.A@u, b)
 	
 class EnergyResidualLoss(torch.nn.Module):
 	def __init__(self, dtype, device, GridSize, h, loss_fn, maxiter=5, gd=0):
@@ -248,13 +252,7 @@ class Trainer(BaseTrainer):
 		with torch.no_grad():
 			real_error = self.l2(pre, ref).item()
 			loss_val = loss.item()
-			gradient_norm = 0.0
-			for param in self.net.parameters():
-				if param.grad is not None:
-					gradient_norm += param.grad.norm()**2
-			gradient_norm = gradient_norm.sqrt().item()
 			self.writer.add_scalar("Train-Loss", loss_val, self.train_global_idx)
-			self.writer.add_scalar("Train-GradientNorm", gradient_norm, self.train_global_idx)
 			self.writer.add_scalar("Train-RealError", real_error, self.train_global_idx)
 			self.train_global_idx += 1
 
@@ -269,10 +267,8 @@ class Trainer(BaseTrainer):
 		ref = torch.clone(torch.detach(self.ans))
 		loss_val = self.loss(pre, force, ref).item()
 		real_error = self.l2(pre, ref).item()
-		# residual_error = self.monitor(pre, force, ref).item()
 
 		self.writer.add_scalar(f"Val-Loss", loss_val, self.train_global_idx)
-		# self.writer.add_scalar("Val-ResidualError", residual_error, self.train_global_idx)
 		self.writer.add_scalar("Val-RealError", real_error, self.train_global_idx)
 		self.val_plot(force.squeeze(), pre.squeeze(), ref.squeeze(), k)
 
@@ -287,8 +283,6 @@ class Trainer(BaseTrainer):
 			errors.append(error)
 		
 		error = np.array(errors).mean()
-		# self.lr_scheduler.step(error)
-			
 		return error
 
 	def val_loop(self):
@@ -326,10 +320,12 @@ class Trainer(BaseTrainer):
 if __name__ == "__main__":
 	from torch.nn.functional import mse_loss
 	from itertools import product
+	torch.manual_seed(0)
+
 	GridSize = 256
-	method = 'Data'
+	method = 'MatRes'
 	act = 'tanh'
-	k = 2
+	# k = 2
 	layer_nums = [2, 2, 2, 2]
 	
 	# for layer_nums in [
@@ -338,7 +334,7 @@ if __name__ == "__main__":
 	# 	[2, 2, 2, 2],
 	# 	# [2, 2, 2, 2, 2],
 	# ]:
-	for k in [ 4, 8]:
+	for k in [8]:
 	# for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['relu', 'tanh'], ['batch', 'layer']):
 	# for method, act in product([ 'EnergyRes' ], ['relu']):
 		tag = f"k={k}"
@@ -372,7 +368,7 @@ if __name__ == "__main__":
 				"act": act
 			},
 			log_dir=f"./all_logs",
-			lr=1e-3,
+			lr=1e-2,
 			total_epochs=[150],
 			tag=tag,
 			loss_fn=mse_loss,

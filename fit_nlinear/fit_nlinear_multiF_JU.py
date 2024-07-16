@@ -122,13 +122,13 @@ class NConvTrainer(BaseTrainer):
                 # subiter_error = self.l2_loss(pre, label).item() 
                 if subiter_error < self.subitr_eps:
                     break
-        return pre
+        return pre, i
         
     def picard_loop(self, x, f, old_pre):
         for i in tqdm(range(self.max_picard_step), position=2, leave=False, desc='Picard Iteration:'):
             generator = self.init_generator(w=old_pre)
 
-            new_pre = self.picard_train_step(x, f, generator)
+            new_pre, inner_loop_steps = self.picard_train_step(x, f, generator)
             
             # picard_error = self.l2_loss(old_pre, new_pre).item()
             with torch.no_grad():
@@ -139,6 +139,7 @@ class NConvTrainer(BaseTrainer):
                 picard_error = self.l2_loss(hard_encode(label, self.gd), w).item()
 
                 self.writer.add_scalar("Train-PicardError", picard_error, self.picard_global_step)
+                self.writer.add_scalar("Train-InnerLoopSteps", inner_loop_steps, self.picard_global_step)
                 self.picard_global_step += 1
            
                 if picard_error <= self.picard_eps:
@@ -146,7 +147,7 @@ class NConvTrainer(BaseTrainer):
                 else:
                     old_pre = torch.clone(torch.detach(new_pre))
                 
-        return picard_error
+        return picard_error, i
 
     def train_loop(self, ):
         self.net.train()
@@ -159,7 +160,7 @@ class NConvTrainer(BaseTrainer):
                 else:
                     old_pre = torch.clone(torch.detach(hard_encode(self.net(x), self.gd)))
 
-            picard_error = self.picard_loop(x, f, old_pre=old_pre)
+            picard_error, picard_loop_steps = self.picard_loop(x, f, old_pre=old_pre)
             train_picard_errors.append(picard_error)
 
         return np.array(train_picard_errors).mean()
@@ -215,33 +216,41 @@ class NConvTrainer(BaseTrainer):
     
 
 if __name__ == '__main__':
-    mission_name = 'nlinear'
     tag = 'Ju'
+    
     trainer = NConvTrainer(
-        gd=0, maxiter=5, mu=0.1,
-        picard_eps=1e-7, subitr_eps=1e-8, 
-        max_subitr_step=800, max_picard_step=100,
-        dtype=torch.float, device='cuda',
-        area=((0,0), (1,1)), GridSize=128,
-        trainN=10000, valN=100, batch_size=5,
+        gd=0, 
+        maxiter=5, 
+        mu=0.1,
+        picard_eps=1e-7, 
+        subitr_eps=1e-8, 
+        max_subitr_step=800, 
+        max_picard_step=100,
+        dtype=torch.float, 
+        device='cuda',
+        area=((0,0), (1,1)), 
+        GridSize=128,
+        trainN=10000, 
+        valN=100, 
+        batch_size=5,
         net_kwargs={
             'model_name': 'segmodel',
             'Block': "ResBottleNeck",
             'planes':8,
             'in_channels':2,
             'classes':1,
-            'GridSize':256,
-            'layer_nums':   [2, 2, 4, 4, 6],
-            'adaptor_nums': [2, 2, 4, 4, 6],
+            'GridSize':128,
+            'layer_nums':   [4, 4, 6, 6, 8],
+            'adaptor_nums': [4, 4, 6, 6, 8],
             'factor':2,
             'norm_method': 'layer',
             'pool_method':'max',
             'padding':'same',
             'padding_mode':'replicate',
-            'end_padding_mode':'valid',
-
+            'end_padding':'valid',
+            'end_padding_mode':'zeros',
         },
-        log_dir=f'./all_logs/{mission_name}',
+        log_dir=f'./all_logs/',
         lr=1e-3, total_epochs=[150],
         tag=tag, loss_fn = F.mse_loss,
         model_save_path=f'./model_save/{mission_name}',

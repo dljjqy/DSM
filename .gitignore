@@ -1,6 +1,10 @@
 *__pycache__*
 *.pyc
 *.zip
+*.npy
+*.png
+*.csv
+
 /*data
 */DLdata/
 */TestData/

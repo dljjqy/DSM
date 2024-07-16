@@ -168,7 +168,7 @@ class Trainer(BaseTrainer):
         B = B[..., None]
         
         # Prediction
-        pre = self.net(data)
+        pre = self.net(data) + 298
 
         # Generate the label by Jac
         with torch.no_grad():
@@ -213,7 +213,7 @@ class Trainer(BaseTrainer):
         B = B[..., None]
 
         # Prediction
-        pre = self.net(data)
+        pre = self.net(data) + 298
 
         # Compute the label and error
         subiter_ans = generator(pre, B, maxiter)
@@ -303,7 +303,7 @@ if __name__ == "__main__":
     from torch.nn.functional import mse_loss
 
     GridSize = 128
-    tag = "JJQC2"
+    tag = "Plus298JJQC2"
 
     trainer = Trainer(
         method="jac",
@@ -329,6 +329,7 @@ if __name__ == "__main__":
             'pool_method':'max',
             'padding':'same',
             'padding_mode':'reflect',
+            'end_padding':'same',
             'end_padding_mode':'reflect',
 
         },

@@ -1,3 +1,6 @@
+# Test all possible residual loss function
+# All experiments have illustrated that the residual loss function does not work
+
 import sys
 
 import torch.utils
