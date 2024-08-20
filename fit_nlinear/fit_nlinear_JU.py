@@ -360,7 +360,7 @@ if __name__ == "__main__":
     GridSize = 128
     max_inner_loop_step = 1
 
-    max_picard_step = 5
+    max_picard_step = 1
     
     tag = f"Picard={max_picard_step}"
     trainer = NConvTrainer(
@@ -388,12 +388,12 @@ if __name__ == "__main__":
             "adaptor_nums": [4, 4, 6, 6, 8],
             "factor": 2,
             "norm_method": "layer",
-            "pool_method": "avg",
+            "pool_method": "max",
             "padding": "same",
             "padding_mode": "zeros",
             "end_padding_mode": "zeros",
             "end_padding": "valid",
-            "act":"relu"
+            "act":"tanh"
         },
         log_dir=f"./all_logs",
         lr=1e-3,

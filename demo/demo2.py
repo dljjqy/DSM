@@ -117,7 +117,8 @@ class ValDs:
 		(left, bottom), (right, top) = area
 		self.h = (right - left) / (GridSize - 1)
 		self.xx, self.yy = np.meshgrid(
-			np.linspace(left, right, GridSize), np.linspace(bottom, top, GridSize)
+			np.linspace(left, right, GridSize), 
+			np.linspace(bottom, top, GridSize)
 		)
 
 	def __len__(self):

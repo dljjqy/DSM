@@ -8,37 +8,30 @@ import json
 class BaseTrainer:
     def __init__(
             self,
-            dtype, device,
-            area, GridSize,
-            trainN, valN, batch_size,
-            net_kwargs, 
-            log_dir, 
-            lr=1e-3, total_epochs = [150],
-            tag = '',
+            dtype: torch.dtype, 
+            device: torch.device,
+            area: any,  # Specify the type if known
+            GridSize: int,
+            trainN: int, 
+            valN: int, 
+            batch_size: int,
+            net_kwargs: dict, 
+            log_dir: str, 
+            lr: float = 1e-3, 
+            total_epochs: list = [150],
+            tag: str = '',
             loss_fn = torch.nn.functional.mse_loss, 
-            model_save_path = './model_save', 
-            hyper_params_save_path='./hyper_parameters/test',):
+            model_save_path: str = './model_save', 
+            hyper_params_save_path: str = './hyper_parameters/test'):
+
+        # Initialize parameters using setattr in a loop
+        params = locals()
+        for name, value in params.items():
+            if name != 'self':
+                setattr(self, name, value)
         
-        self.dtype = dtype
-        self.device = device
-
-        self.area = area
-        self.GridSize = GridSize
-
-        self.trainN = trainN
-        self.valN = valN
-        self.batch_size = batch_size
-
         self.net_kwargs = net_kwargs.copy()
         self.init_network(net_kwargs)
-
-        self.log_dir = log_dir
-        self.lr = lr
-        self.tag = tag
-        self.total_epochs = total_epochs
-        
-        self.tag = tag
-        self.loss_fn = loss_fn    
         
         self.model_save_path = f"{model_save_path}/{GridSize}/{self.name}"
         if not Path(self.model_save_path).is_dir():
@@ -118,23 +111,20 @@ class BaseTrainer:
     def val_loop(self):
         pass
 
+    def save_best_model(self, new_value, best_value_attr, file_name):
+        if new_value <= getattr(self, best_value_attr):
+            setattr(self, best_value_attr, new_value)
+            torch.save(self.net.state_dict(), f'{self.model_save_path}/{file_name}')
+    
     def save_best_train_error(self, new_train_error):
-        if new_train_error <= self.best_train_error:
-            self.best_train_error = new_train_error
-            # print(f"\nEpoch {self.global_epoch_idx} Best train loss: {self.best_train_error:5<.3e} LR: {self.lr_scheduler._last_lr[0]:5<.2e}")
-            torch.save(self.net.state_dict(), f'{self.model_save_path}/best_train.pt')
+        self.save_best_model(new_train_error, 'best_train_error', 'best_train.pt')
     
     def save_best_val_real(self, new_val_real_loss):
-        if new_val_real_loss <= self.best_val_real_loss:
-            self.best_val_real_loss = new_val_real_loss
-            # print(f"\nEpoch {self.global_epoch_idx} Best validation  Real loss: {self.best_val_real_loss:5<.3e} LR: {self.lr_scheduler._last_lr[0]:5<.2e}")
-            torch.save(self.net.state_dict(), f'{self.model_save_path}/best_val.pt')
+        self.save_best_model(new_val_real_loss, 'best_val_real_loss', 'best_val.pt')
     
     def save_best_val_error(self, new_val_error):
-        if new_val_error <= self.best_val_error:
-            self.best_val_error = new_val_error
-            # print(f"\nEpoch {self.global_epoch_idx} Best validation subitr loss: {self.best_val_error:5<.3e} LR: {self.lr_scheduler._last_lr[0]:5<.2e}")
-            torch.save(self.net.state_dict(), f'{self.model_save_path}/best_val_itr.pt')
+        self.save_best_model(new_val_error, 'best_val_error', 'best_val_itr.pt')
+
 
     def fit_loop(self):
         for epoch_num in self.total_epochs:

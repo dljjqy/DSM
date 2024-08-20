@@ -223,7 +223,7 @@ def save_img_force(path, f, name='force', vmin=None, vmax=None, cmap=cm.Spectral
     fig.savefig(f"{path}/{name}.png", bbox_inches='tight')
     plt.close(fig)
 
-def save_surf(path, z, bar_ticks, xx, yy, name='surf_pre', cmap=cm.Spectral_r):
+def save_surf(path, z, xx, yy, name='surf_pre', cmap=cm.Spectral_r):
     # plot surfaces of pre and ans
     fig, ax = fig_ax_for_save({"projection": "3d"}, height=10, width=10,)
     ax.set_xticks(np.linspace(xx.min(), xx.max(), 6))
