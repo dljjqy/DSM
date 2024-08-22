@@ -3,20 +3,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import mmbv, bvi, hard_encode, kappa
 
-def batchediv2tensor(indices, values, GridSize, dtype, device):
-	batch_size ,_, N = indices.shape
-	new_indices = []
-	for k in range(batch_size):
-		idx = torch.ones(1, N) * k
-		new_indices.append(torch.concatenate([idx, indices[k]], dim=0))
-	new_indices = torch.concatenate(new_indices, dim=1)
-	new_values = torch.flatten(values)
+# def batchediv2tensor(indices, values, GridSize, dtype, device):
+# 	batch_size ,_, N = indices.shape
+# 	new_indices = []
+# 	for k in range(batch_size):
+# 		idx = torch.ones(1, N) * k
+# 		new_indices.append(torch.concatenate([idx, indices[k]], dim=0))
+# 	new_indices = torch.concatenate(new_indices, dim=1)
+# 	new_values = torch.flatten(values)
 
-	BatchedA = torch.sparse_coo_tensor(
-        new_indices, new_values, (batch_size, GridSize**2, GridSize**2), 
-        device=device, requires_grad=False, dtype=dtype, is_coalesced=True)
+# 	BatchedA = torch.sparse_coo_tensor(
+#         new_indices, new_values, (batch_size, GridSize**2, GridSize**2), 
+#         device=device, requires_grad=False, dtype=dtype, is_coalesced=True)
 
-	return BatchedA	
+# 	return BatchedA	
 
 class BatchedL2(nn.Module):
 	def __init__(self, h):
@@ -95,20 +95,6 @@ class PinnGenerator(torch.nn.Module):
 			for _ in range(self.maxiter):
 				y = self.jac_step(x, y, f, mu)
 		return y
-
-class ICDGenerator(nn.Module):
-	def __init__(self, GridSize, dtype, device, maxiter, area):
-		self.GridSize = GridSize
-		(left, bottom), (right, top) = area
-		self.h = (right - left) / (GridSize - 1)
-		self.dtype = dtype
-		self.device = device
-		self.maxiter = maxiter
-	
-	def _get_kernel(self, k):
-		k = torch.tensor(k, requires_grad=True)
-		k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).to(self.dtype).to(self.device)
-		return k
 
 class PinnGenerator_Ju(torch.nn.Module):
 	def __init__(self, batch_size, GridSize, dtype, device, maxiter, area, init_kappa=None, mu=0.1, gd=0):
@@ -198,84 +184,6 @@ class JacBatched(nn.Module):
 			x_new = x.reshape(original_shape)
 			return x_new.to(self.dtype).to(self.device)
 
-class JacTorch(nn.Module):
-	def __init__(self, A, device, dtype):
-		super().__init__()
-		with torch.no_grad():  
-			A = A.coalesce()
-			idx = A.indices()
-			mask = (idx[-2] == idx[-1])
-
-			D_idx = idx[:, mask]
-			D_val = A.values()[mask]
-
-			D = torch.sparse_coo_tensor(
-				indices=D_idx, 
-				values=D_val,
-				dtype=dtype,
-				device=device,
-				requires_grad=False
-				)
-			self.M = A - D
-			del D
-
-			self.invD = torch.sparse_coo_tensor(
-				indices=D_idx, 
-				values=1.0 / D_val,
-				dtype=dtype,
-				device=device,
-				requires_grad=False
-				) 
-			
-			self.dtype = dtype
-			self.device = device
-
-	def forward(self, u, b, maxiter):
-		'''
-		x: torch.Tensor with shape B x 1 x N x N
-		b: torch.Tensor with shape B x N**2
-		'''
-		original_shape = u.shape
-		with torch.no_grad():
-			x = torch.flatten(u, 1, -1)
-			for _ in range(maxiter):
-				Mx = mmbv(self.M, x)
-				x = mmbv(self.invD, (b - Mx)) 
-			x_new = x.reshape(original_shape)
-			return x_new.to(self.dtype).to(self.device)
-
-class CGTorch(nn.Module):
-	def __init__(self, A, device, dtype):
-		super().__init__()
-		with torch.no_grad():
-			self.dtype = dtype
-			self.device = device
-			self.A = A.to(dtype).to(device)
-
-	def forward(self, u, b, maxiter):
-		with torch.no_grad():
-			original_shape = u.shape
-			x = torch.flatten(u, 1, -1)
-
-			y = self.rhs_cg(x, b, maxiter)
-		return y.reshape(original_shape)
-
-	def rhs_cg(self, x, b, max_iters=20):
-		r = b - mmbv(self.A, x)
-		p = r
-		for _ in range(max_iters):
-			rr = bvi(r, r)
-			Ap = mmbv(self.A, p)
-			alpha = rr / bvi(p, Ap)
-			x = x + alpha * p
-			r1 = r - alpha * Ap
-			beta = bvi(r1, r1) / rr
-			p = r1 + beta * p
-			r = r1
-			print(f"error: {r.mean().item():.3e}")
-		return x
-
-
 class CGBatched(nn.Module):
 	def __init__(self, A, device, dtype):
 		super().__init__()
@@ -306,10 +214,22 @@ class CGBatched(nn.Module):
 			beta = bvi(r1, r1)[..., None] / rr
 			p = r1 + beta * p
 			r = r1
-			# print(f"error: {r.mean().item():.3e}")
 		return x
 
-
+# class ICDGenerator(nn.Module):
+# 	def __init__(self, GridSize, dtype, device, maxiter, area):
+# 		self.GridSize = GridSize
+# 		(left, bottom), (right, top) = area
+# 		self.h = (right - left) / (GridSize - 1)
+# 		self.dtype = dtype
+# 		self.device = device
+# 		self.maxiter = maxiter
+	
+# 	def _get_kernel(self, k):
+# 		k = torch.tensor(k, requires_grad=True)
+# 		k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).to(self.dtype).to(self.device)
+# 		return k
+	
 # class NpSolver:
 #     def __init__(self, A, method):
 #         self.A = A
