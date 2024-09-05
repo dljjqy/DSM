@@ -32,7 +32,7 @@ class Trainer(BaseTrainer):
 
     @property
     def name(self):
-        return f"{self.tag}-{self.GridSize}-{self.net.name}-{self.method}-{self.maxiter}-{self.trainN}-{self.batch_size}"
+        return f"{self.tag}-{self.GridSize}-{self.net.name()}-{self.method}-{self.maxiter}-{self.trainN}-{self.batch_size}"
     
     def reboot(self):
         self.init_traindl()

@@ -261,7 +261,7 @@ class Trainer(BaseTrainer):
 
 	@property
 	def name(self):
-		return f"{self.tag}-{self.net.name}-{self.GridSize}-{self.method}-{self.trainN}"
+		return f"{self.tag}-{self.net.name()}-{self.GridSize}-{self.method}-{self.trainN}"
 
 	def hyper_param_need2save(self):	
 		param = {
@@ -335,7 +335,6 @@ class Trainer(BaseTrainer):
 		pre = self.net(x)
 		with torch.no_grad():
 			label = self.generator(torch.clone(torch.detach(pre)), f, kappa)
-			# print((label == pre).all())
 
 		train_loss = self.loss_fn(pre, label)
 
@@ -420,7 +419,7 @@ if __name__ == "__main__":
 			valN=100,
 			batch_size=5,
 			net_kwargs={
-				"model_name": "segmodel",
+				"model_name": "varyunet",
 				"Block": "ResBottleNeck",
 				"planes": 6,
 				"in_channels": 1,
@@ -433,8 +432,8 @@ if __name__ == "__main__":
 				"pool_method": "max",
 				"padding": "same",
 				"padding_mode": "zeros",
-				"end_padding_mode": "zeros",
 				"end_padding": "valid",
+				"end_padding_mode": "zeros",
 				"act": "tanh"
 			},
 			log_dir=f"./all_logs",

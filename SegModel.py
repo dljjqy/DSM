@@ -5,131 +5,6 @@ from typing import Literal, List
 from typing import Type, Union
 import segmentation_models_pytorch as smp
 
-class DoubleConv(nn.Module):
-    def __init__(self, inc, outc, mode='reflect', act=nn.ReLU()):
-        super().__init__()
-        layers = [
-            nn.Conv2d(inc, outc, 3, 1, padding='same', padding_mode=mode),
-            nn.BatchNorm2d(outc),
-            act,
-            nn.Conv2d(outc, outc, 3, 1, padding='same', padding_mode=mode),
-            nn.BatchNorm2d(outc),
-            act,
-            ]
-        self.net = nn.Sequential(*layers)
-    
-    def forward(self, x):
-        return self.net(x)
-
-class UNetEncoder(nn.Module):
-    def __init__(
-            self, 
-            inc, 
-            outc, 
-            padding_mode,
-            act):
-        super().__init__()
-        layers = [
-            # nn.Conv2d(inc, inc, 5, 2, padding=2, padding_mode='reflect'),
-            # nn.FractionalMaxPool2d(2, output_ratio=(0.5, 0.5)),
-            nn.MaxPool2d(2, 2),
-            DoubleConv(inc, outc, padding_mode, act),
-        ]
-        self.net = nn.Sequential(*layers)
-    
-    def forward(self, x):
-        return self.net(x)
-
-class UNetDecoder(nn.Module):
-    def __init__(
-            self, 
-            inc, 
-            outc,
-            padding_mode, 
-            act, 
-            kernel_size=(2, 2), 
-            step_size=(2, 2)):
-        super().__init__()
-        self.decoder = nn.ConvTranspose2d(inc, outc, kernel_size, step_size)
-        self.dconv = DoubleConv(outc, outc, padding_mode, act)
-    
-    def forward(self, x1, x2):
-        x1 = self.decoder(x1)
-        x1 = F.interpolate(x1, x2.size()[-2:], align_corners=False, mode='bilinear')
-        x = x1 + x2
-        # x = torch.concatenate([x1, x2], axis=1)
-        return self.dconv(x)
-
-class VaryUNet(nn.Module):
-    '''
-    Params:
-        in_c: input channels.
-        out_c: output channels.
-        features: The first layers' features.In the following layers,every Encoder will double the features as output channels.
-        layers: How deep the UNet is.
-        end_padding: The padding mode in the last one conv layer. For finite difference method with point type mesh, end_padding should be 'valid' for Dirichlet type. And (0, 1) for Mixed type boundary.
-    '''
-    def __init__(
-            self, 
-            in_channels=2, 
-            classes=1, 
-            features=8, 
-            layers=5, 
-            end_padding=(0, 1),
-            padding_mode='reflect',
-            act=nn.ReLU()):
-        super().__init__()
-        self.in_c = in_channels
-        self.out_c = classes
-        self.features = features
-        self.layers = layers
-
-        # self.first = nn.Conv2d(in_channels, features, 3, 1, padding='same', padding_mode='reflect')
-        self.first = DoubleConv(in_channels, features, mode=padding_mode, act = act)
-        self.decoders = []
-        self.encoders = []
-        for i in range(layers):
-            self.encoders.append(
-                UNetEncoder(2**i * features, 
-                        2**(i+1) * features,
-                        padding_mode,
-                        act))
-            
-            self.decoders.append(
-                UNetDecoder(2**(layers-i) * features , 
-                        2**(layers-i-1) * features),
-                        padding_mode,
-                        act)
-
-        # Middle and End layers
-        # self.mid = nn.Conv2d(2**(layers) * features, 2**(layers) * features, 1, 1, padding='valid', bias = False)
-        self.mid = DoubleConv(2**(layers) * features, 2**(layers) * features, mode=padding_mode, act=act)
-        self.end = nn.Conv2d(features, classes, 3, 1, padding=end_padding, padding_mode=padding_mode)
-        
-        self.encoders = nn.ModuleList(self.encoders)
-        self.decoders = nn.ModuleList(self.decoders)
-
-    def forward(self, x):
-        Ys = [self.first(x)]
-        for encoder in self.encoders:
-            X = Ys[-1]
-            Ys.append(encoder(X))
-
-        Ys.append(self.mid(Ys.pop()))
-
-        for decoder in self.decoders:
-            X1 = Ys.pop()
-            X2 = Ys.pop()
-            Y = decoder(X1, X2)
-            
-            Ys.append(Y)
-        X = Ys.pop()
-        return self.end(X)
-
-    @property
-    def name(self):
-        return f'VaryUNet-{self.in_c}-{self.out_c}-{self.features}-{self.layers}'
-
 class BasicBlock(nn.Module):
     def __init__(
         self,
@@ -638,9 +513,7 @@ class SegModel(nn.Module):
                 self.act = nn.Tanh()
             case 'sin':
                 self.act = Sin()
-            # case 'sin':
                 
-
         self.input_header = InputHeader(
             in_channels=in_channels,
             out_channels=planes,
@@ -699,11 +572,10 @@ class SegModel(nn.Module):
             act = self.act
         )
     
-    @property
     def name(self):
         layer_name = "#".join([str(num) for num in self.layer_nums])
         adaptor_name = "#".join([str(num) for num in  self.adaptor_nums])
-        return f"{self.Block.__name__}-{self.planes}-{layer_name}-{self.factor}-{self.act_name}-{self.norm_method}-{self.pool_method}-{self.padding_mode}"
+        return f"SegModel"
     
     def _make_adaptors(self):
         adaptors = []
@@ -740,6 +612,126 @@ class SegModel(nn.Module):
         y = self.output_header(y)
         return y
     
+
+class VaryUNet(nn.Module):
+    def __init__(
+        self,
+        Block: str,
+        planes:int,
+        in_channels: int,
+        classes,
+        GridSize: int,
+        layer_nums: List[int],
+        adaptor_nums:List[int],
+        factor: int,
+        norm_method: Literal['batch', 'layer'],
+        pool_method: Literal['max', 'avg'],
+        padding='same',
+        end_padding='same',
+        padding_mode='reflect',
+        end_padding_mode = 'reflect',
+        center=True,
+        act="relu"
+        ):
+        super().__init__()
+        match Block:
+            case 'ResBottleNeck':
+                self.Block = ResBottleNeck
+            case 'ResBasic':
+                self.Block = ResBasicBlock
+            case 'Basic':
+                self.Block = BasicBlock
+        self.planes = planes
+        self.in_channels = in_channels
+        self.classes = classes
+        self.GridSize = GridSize
+        self.layer_nums = layer_nums
+        self.adaptor_nums = adaptor_nums
+        self.factor = factor
+        self.norm_method = norm_method
+        self.pool_method = pool_method
+        self.padding = padding
+        self.padding_mode = padding_mode
+        self.act_name = act
+        match act:
+            case 'relu':
+               self.act = nn.ReLU()
+            case 'tanh':
+                self.act = nn.Tanh()
+            case 'sin':
+                self.act = Sin()
+                
+        self.input_header = InputHeader(
+            in_channels=in_channels,
+            out_channels=planes,
+            GridSize=GridSize,
+            norm_method=norm_method,
+            padding=padding,
+            padding_mode=padding_mode,
+            act=self.act
+        )
+
+        self.encoder = Encoder(
+            self.Block,
+            planes, 
+            GridSize,
+            layer_nums,
+            factor, 
+            norm_method,
+            pool_method,
+            padding,
+            padding_mode,
+            self.act
+        )
+
+        if center:
+            channels = planes * factor**len(layer_nums)
+            self.center = nn.Conv2d(
+                in_channels=channels,
+                out_channels=channels,
+                kernel_size=3,
+                stride=1,
+                padding=padding,
+                padding_mode=padding_mode
+            )
+        else:
+            self.center = nn.Identity()
+
+        self.decoder = Decoder(
+            self.Block,
+            planes, 
+            GridSize,
+            layer_nums,
+            factor, 
+            norm_method,
+            padding,
+            padding_mode,
+            self.act
+        )
+        
+        self.output_header = OutputHeader(
+            in_channels=planes,
+            classes=classes,
+            padding=end_padding,
+            padding_mode=end_padding_mode,
+            act = self.act
+        )
+    
+    def name(self):
+        layer_name = "#".join([str(num) for num in self.layer_nums])
+        adaptor_name = "#".join([str(num) for num in  self.adaptor_nums])
+        return "VaryUnet"
+    
+    def forward(self, x):
+        x = self.input_header(x)
+        features = self.encoder(x)
+
+        y = self.center(features[-1])
+        y = self.decoder(y, features)
+        y = self.output_header(y)
+        return y
+    
+
 class CNN(nn.Module):
     def __init__(self, name, kwargs, dtype=torch.float, device='cpu'):
         super().__init__()
@@ -754,7 +746,7 @@ class CNN(nn.Module):
                 net = smp.UnetPlusPlus(**kwargs)
             
             case 'unet':
-                net = smp.Unet(**kwargs)
+                net = UNet(**kwargs)
         self.net = net.to(dtype).to(device)
 
     def forward(self, x):

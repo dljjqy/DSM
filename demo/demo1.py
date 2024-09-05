@@ -195,7 +195,7 @@ class Trainer(BaseTrainer):
 
 	@property
 	def name(self):
-		return f"{self.tag}-{self.net.name}-{self.GridSize}-{self.method}-{self.trainN}"
+		return f"{self.tag}-{self.net.name()}-{self.GridSize}-{self.method}-{self.trainN}"
 	
 	def l2(self, pre, ans):
 		diff = (pre - ans[..., 1:-1, 1:-1]) ** 2 * self.h**2
@@ -236,7 +236,8 @@ class Trainer(BaseTrainer):
 
 	def train_step(self):
 		# Prediction
-		data = torch.from_numpy(np.stack([self.xx, self.yy])).to(self.device).to(self.dtype)
+		# data = torch.from_numpy(np.stack([self.xx, self.yy])).to(self.device).to(self.dtype)
+		data = torch.ones(self.batch_size, 1, self.GridSize, self.GridSize)
 		data = data[None, ...]
 		pre = self.net(data)
 		
@@ -325,55 +326,48 @@ if __name__ == "__main__":
 	GridSize = 256
 	method = 'MatRes'
 	act = 'tanh'
-	# k = 2
 	layer_nums = [2, 2, 2, 2]
 	
-	# for layer_nums in [
-	# 	# [2, 2],
-	# 	# [2, 2, 2],
-	# 	[2, 2, 2, 2],
-	# 	# [2, 2, 2, 2, 2],
-	# ]:
 	for k in [8]:
-	# for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['relu', 'tanh'], ['batch', 'layer']):
-	# for method, act in product([ 'EnergyRes' ], ['relu']):
-		tag = f"k={k}"
-		trainer = Trainer(
-			K=k,
-			method=method,
-			dtype=torch.float,
-			device="cuda",
-			area=((-1, -1), (1, 1)),
-			GridSize=GridSize,
-			trainN=100,
-			valN=1,
-			batch_size=1,
-			net_kwargs=
-			{
-				'model_name': 'segmodel',
-				"Block": 'ResBottleNeck',
-				"planes": 8,
-				"in_channels": 2,
-				"classes": 1,
-				"GridSize": GridSize,
-				"layer_nums": layer_nums,
-				"adaptor_nums": layer_nums,
-				"factor": 2,
-				"norm_method": 'layer',
-				"pool_method": "max",
-				"padding": "same",
-				"padding_mode": "zeros",
-				"end_padding":"valid",
-				"end_padding_mode": "zeros",
-				"act": act
-			},
-			log_dir=f"./all_logs",
-			lr=1e-2,
-			total_epochs=[150],
-			tag=tag,
-			loss_fn=mse_loss,
-			model_save_path=f"./model_save",
-			hyper_params_save_path=f"./hyper_parameters",
-			)
-		
-		trainer.fit_loop()
+		# for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['relu', 'tanh'], ['batch', 'layer']):
+		for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['tanh'], ['layer']):
+			tag = f"k={k}"
+			trainer = Trainer(
+				K=k,
+				method=method,
+				dtype=torch.float,
+				device="cuda",
+				area=((-1, -1), (1, 1)),
+				GridSize=GridSize,
+				trainN=100,
+				valN=1,
+				batch_size=1,
+				net_kwargs=
+				{
+					'model_name': 'varyunet',
+					"Block": 'ResBottleNeck',
+					"planes": 8,
+					"in_channels": 2,
+					"classes": 1,
+					"GridSize": GridSize,
+					"layer_nums": layer_nums,
+					"adaptor_nums": layer_nums,
+					"factor": 2,
+					"norm_method": norm,
+					"pool_method": "max",
+					"padding": "same",
+					"padding_mode": "zeros",
+					"end_padding":"valid",
+					"end_padding_mode": "zeros",
+					"act": act
+				},
+				log_dir=f"./all_logs",
+				lr=1e-2,
+				total_epochs=[150],
+				tag=tag,
+				loss_fn=mse_loss,
+				model_save_path=f"./model_save",
+				hyper_params_save_path=f"./hyper_parameters",
+				)
+			
+			trainer.fit_loop()

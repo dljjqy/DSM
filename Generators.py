@@ -183,6 +183,52 @@ class JacBatched(nn.Module):
 				x = torch.bmm(self.invD, (b - Mx)) 
 			x_new = x.reshape(original_shape)
 			return x_new.to(self.dtype).to(self.device)
+		
+class JacTorch(nn.Module):
+	def __init__(self, A, device, dtype):
+		super().__init__()
+		with torch.no_grad():  
+			A = A.coalesce()
+			idx = A.indices()
+			mask = (idx[-2] == idx[-1])
+
+			D_idx = idx[:, mask]
+			D_val = A.values()[mask]
+
+			D = torch.sparse_coo_tensor(
+				indices=D_idx, 
+				values=D_val,
+				dtype=dtype,
+				device=device,
+				requires_grad=False
+				)
+			self.M = A - D
+			del D
+
+			self.invD = torch.sparse_coo_tensor(
+				indices=D_idx, 
+				values=1.0 / D_val,
+				dtype=dtype,
+				device=device,
+				requires_grad=False
+				) 
+			
+			self.dtype = dtype
+			self.device = device
+
+	def forward(self, u, b, maxiter):
+		'''
+		x: torch.Tensor with shape B x 1 x N x N
+		b: torch.Tensor with shape B x N**2
+		'''
+		original_shape = u.shape
+		with torch.no_grad():
+			x = torch.flatten(u, 1, -1)
+			for _ in range(maxiter):
+				Mx = mmbv(self.M, x)
+				x = mmbv(self.invD, (b - Mx)) 
+			x_new = x.reshape(original_shape)
+			return x_new.to(self.dtype).to(self.device)
 
 class CGBatched(nn.Module):
 	def __init__(self, A, device, dtype):
@@ -214,6 +260,38 @@ class CGBatched(nn.Module):
 			beta = bvi(r1, r1)[..., None] / rr
 			p = r1 + beta * p
 			r = r1
+		return x
+
+
+class CGTorch(nn.Module):
+	def __init__(self, A, device, dtype):
+		super().__init__()
+		with torch.no_grad():
+			self.dtype = dtype
+			self.device = device
+			self.A = A.to(dtype).to(device)
+
+	def forward(self, u, b, maxiter):
+		with torch.no_grad():
+			original_shape = u.shape
+			x = torch.flatten(u, 1, -1)
+
+			y = self.rhs_cg(x, b, maxiter)
+		return y.reshape(original_shape)
+
+	def rhs_cg(self, x, b, max_iters=20):
+		r = b - mmbv(self.A, x)
+		p = r
+		for _ in range(max_iters):
+			rr = bvi(r, r)
+			Ap = mmbv(self.A, p)
+			alpha = rr / bvi(p, Ap)
+			x = x + alpha * p
+			r1 = r - alpha * Ap
+			beta = bvi(r1, r1) / rr
+			p = r1 + beta * p
+			r = r1
+			print(f"error: {r.mean().item():.3e}")
 		return x
 
 # class ICDGenerator(nn.Module):

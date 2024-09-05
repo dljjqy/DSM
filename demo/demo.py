@@ -307,7 +307,7 @@ class Trainer(BaseTrainer):
 
 	@property
 	def name(self):
-		return f"{self.tag}-{self.net.name}-{self.GridSize}-{self.method}-{self.trainN}"
+		return f"{self.tag}-{self.net.name()}-{self.GridSize}-{self.method}-{self.trainN}"
 	
 	def l2(self, pre, ans):
 		diff = (pre - ans[..., 1:-1, 1:-1]) ** 2 * self.h**2

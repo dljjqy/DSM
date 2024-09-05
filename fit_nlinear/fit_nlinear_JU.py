@@ -145,7 +145,7 @@ class NConvTrainer(BaseTrainer):
 
     @property
     def name(self):
-        return f"{self.tag}-{self.net.name}-GridSize:{self.GridSize}-maxiter:{self.maxiter}-trainN:{self.trainN}-bs:{self.batch_size}"
+        return f"{self.tag}-{self.net.name()}-GridSize:{self.GridSize}-maxiter:{self.maxiter}-trainN:{self.trainN}-bs:{self.batch_size}"
 
     def hyper_param_need2save(self):
         param = {

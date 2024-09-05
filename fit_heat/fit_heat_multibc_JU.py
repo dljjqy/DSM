@@ -43,7 +43,7 @@ class Trainer(BaseTrainer):
 
     @property
     def name(self):
-        return f"{self.tag}-{self.net.name}-{self.GridSize}-{self.method}-{self.maxiter}-{self.trainN}-{self.batch_size}"
+        return f"{self.tag}-{self.net.name()}-{self.GridSize}-{self.method}-{self.maxiter}-{self.trainN}-{self.batch_size}"
     
     def reboot(self):
         self.config_optimizer(self.lr)
