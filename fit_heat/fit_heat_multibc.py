@@ -39,7 +39,7 @@ class Trainer(BaseTrainer):
 
     @property
     def name(self):
-        return f"{self.tag}-{self.net.name()}-{self.GridSize}-{self.method}-{self.maxiter}-{self.trainN}-{self.batch_size}"
+        return f"{self.tag}"
 
     def reboot(self):
         self.config_optimizer(self.lr)
@@ -170,7 +170,7 @@ class Trainer(BaseTrainer):
         B = B[..., None]
         
         # Prediction
-        pre = self.net(data) + 298
+        pre = self.net(data)
 
         # Generate the label by Jac
         with torch.no_grad():
@@ -215,7 +215,7 @@ class Trainer(BaseTrainer):
         B = B[..., None]
 
         # Prediction
-        pre = self.net(data) + 298
+        pre = self.net(data) 
 
         # Compute the label and error
         subiter_ans = generator(pre, B, maxiter)
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     from torch.nn.functional import mse_loss
 
     GridSize = 128
-    tag = "Plus298JJQC2"
+    tag = "VUnetReluC2"
 
     trainer = Trainer(
         method="jac",
@@ -318,7 +318,7 @@ if __name__ == "__main__":
         valN=10,
         batch_size=5,
         net_kwargs={
-            'model_name': 'segmodel',
+            'model_name': 'varyunet',
             'Block': "ResBottleNeck",
             'planes':8,
             'in_channels':2,
@@ -333,7 +333,7 @@ if __name__ == "__main__":
             'padding_mode':'reflect',
             'end_padding':'same',
             'end_padding_mode':'reflect',
-
+            'act':'relu'
         },
         log_dir=f"./all_logs",
         lr=1e-3,

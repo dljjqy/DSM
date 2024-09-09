@@ -37,7 +37,6 @@ class C2MuTrainDs(Dataset):
 
     def __getitem__(self, index):
         f = force(self.xx, self.yy, self.center_points[index]).to(self.dtype).to(self.device)
-        
         mu = torch.ones_like(f) * uniform(0.1, 1)
         data = torch.stack([f, mu]).to(self.dtype).to(self.device)
         return data, f[None, ...], mu[None, ...]

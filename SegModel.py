@@ -745,8 +745,8 @@ class CNN(nn.Module):
             case 'unet++':
                 net = smp.UnetPlusPlus(**kwargs)
             
-            case 'unet':
-                net = UNet(**kwargs)
+            # case 'unet':
+            #     net = UNet(**kwargs)
         self.net = net.to(dtype).to(device)
 
     def forward(self, x):

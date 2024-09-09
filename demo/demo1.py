@@ -234,11 +234,14 @@ class Trainer(BaseTrainer):
 		self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
 		# self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=5 )
 
+	def _get_input_data(self):
+		# data = torch.from_numpy(np.stack([self.xx, self.yy]))
+		data = torch.ones(self.batch_size, 1, self.GridSize, self.GridSize)
+		return data.to(self.device).to(self.dtype)
+
 	def train_step(self):
 		# Prediction
-		# data = torch.from_numpy(np.stack([self.xx, self.yy])).to(self.device).to(self.dtype)
-		data = torch.ones(self.batch_size, 1, self.GridSize, self.GridSize)
-		data = data[None, ...]
+		data = self._get_input_data()
 		pre = self.net(data)
 		
 		force = torch.clone(torch.detach(self.force))[None, None, ...]
@@ -260,8 +263,7 @@ class Trainer(BaseTrainer):
 		return real_error
 
 	def val_step(self, ):
-		data = torch.from_numpy(np.stack([self.xx, self.yy])).to(self.device).to(self.dtype)
-		data = data[None, ...]
+		data = self._get_input_data()
 		pre = self.net(data)
 		
 		force = torch.clone(torch.detach(self.force))[None, None, ...]
@@ -328,10 +330,10 @@ if __name__ == "__main__":
 	act = 'tanh'
 	layer_nums = [2, 2, 2, 2]
 	
-	for k in [8]:
+	for k in [1]:
 		# for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['relu', 'tanh'], ['batch', 'layer']):
 		for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['tanh'], ['layer']):
-			tag = f"k={k}"
+			tag = f"ONE-k={k}"
 			trainer = Trainer(
 				K=k,
 				method=method,
@@ -347,7 +349,7 @@ if __name__ == "__main__":
 					'model_name': 'varyunet',
 					"Block": 'ResBottleNeck',
 					"planes": 8,
-					"in_channels": 2,
+					"in_channels": 1,
 					"classes": 1,
 					"GridSize": GridSize,
 					"layer_nums": layer_nums,
