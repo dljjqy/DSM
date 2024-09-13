@@ -3,20 +3,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 from utils import mmbv, bvi, hard_encode, kappa
 
-# def batchediv2tensor(indices, values, GridSize, dtype, device):
-# 	batch_size ,_, N = indices.shape
-# 	new_indices = []
-# 	for k in range(batch_size):
-# 		idx = torch.ones(1, N) * k
-# 		new_indices.append(torch.concatenate([idx, indices[k]], dim=0))
-# 	new_indices = torch.concatenate(new_indices, dim=1)
-# 	new_values = torch.flatten(values)
+def batchediv2tensor(indices, values, GridSize, dtype, device):
+	batch_size ,_, N = indices.shape
+	new_indices = []
+	for k in range(batch_size):
+		idx = torch.ones(1, N) * k
+		new_indices.append(torch.concatenate([idx, indices[k]], dim=0))
+	new_indices = torch.concatenate(new_indices, dim=1)
+	new_values = torch.flatten(values)
 
-# 	BatchedA = torch.sparse_coo_tensor(
-#         new_indices, new_values, (batch_size, GridSize**2, GridSize**2), 
-#         device=device, requires_grad=False, dtype=dtype, is_coalesced=True)
+	BatchedA = torch.sparse_coo_tensor(
+        new_indices, new_values, (batch_size, GridSize**2, GridSize**2), 
+        device=device, requires_grad=False, dtype=dtype, is_coalesced=True)
 
-# 	return BatchedA	
+	return BatchedA	
 
 class BatchedL2(nn.Module):
 	def __init__(self, h):

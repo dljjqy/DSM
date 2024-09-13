@@ -98,7 +98,10 @@ class BaseTrainer:
 
     def init_valdl(self):
         pass
-        
+    
+    def predict(self):
+        pass
+
     def train_step(self, *args):
         pass
 
@@ -124,7 +127,6 @@ class BaseTrainer:
     
     def save_best_val_error(self, new_val_error):
         self.save_best_model(new_val_error, 'best_val_error', 'best_val_itr.pt')
-
 
     def fit_loop(self):
         for epoch_num in self.total_epochs:

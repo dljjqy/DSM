@@ -32,9 +32,9 @@ class C3Ds(Dataset):
     
     def read_matrix(self, index):
         a = load_npz(f"{self.path}/a{self.start + index}.npz").tocoo()
-        # i, v = coo2data(a)
-        A = coo2tensor(a, self.device, self.dtype)
-        return A
+        i, v = coo2data(a)
+        # A = coo2tensor(a, self.device, self.dtype)
+        return i, v
 
     def __getitem__(self, index):
         cof = np.load(f"{self.path}/c{self.start + index}.npy")
@@ -42,14 +42,16 @@ class C3Ds(Dataset):
         u = np.load(f"{self.path}/u{self.start + index}.npy")
         b = np.load(f"{self.path}/b{self.start + index}.npy")
 
-        A = self.read_matrix(index)
+        # A = self.read_matrix(index)
+        i, v = self.read_matrix(index)
+        
         b = torch.from_numpy(b).to(self.dtype).to(self.device)
         u = torch.from_numpy(u[np.newaxis, ...]).to(self.dtype).to(self.device)
 
         # normed_cof = (cof - 0.1) / 9.9
         data = np.stack([self.xx, self.yy, self.a * cof + self.b], axis=0)
         data = torch.from_numpy(data).to(self.dtype).to(self.device)
-        return data, cof, A, b, u
+        return data, cof, i, v, b, u
 
 class C1Ds(C3Ds):
     def __getitem__(self, index):
@@ -59,8 +61,8 @@ class C1Ds(C3Ds):
         u = np.load(f"{self.path}/u{self.start + index}.npy")
         b = np.load(f"{self.path}/b{self.start + index}.npy")
         
-        # i, v = self.read_matrix(index)
-        A = self.read_matrix(index)
+        i, v = self.read_matrix(index)
+        # A = self.read_matrix(index)
         
         b = torch.from_numpy(b).to(self.dtype).to(self.device)
         u = torch.from_numpy(u[np.newaxis, ...]).to(self.dtype).to(self.device)
@@ -68,4 +70,4 @@ class C1Ds(C3Ds):
         # normed_cof = (cof - 0.1) / 9.9
 
         data = torch.from_numpy(self.a * cof + self.b).to(self.dtype).to(self.device)
-        return data[None, ...], cof, A, b, u
+        return data[None, ...], cof, i, v, b, u

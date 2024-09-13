@@ -237,6 +237,7 @@ def fd_solve_nlinear(GridSize, area, mu, center=(0.5, 0.5), Picard_maxiter=1000)
             if i == Picard_maxiter - 1:
                 print('Warning, May not converge')
                 print(f"Itr: {i}\t Delta: {delta:.3e}\t Error: {error:.3e}\t")
+                return None
     return newu.reshape(GridSize, GridSize)
 
 def fvm_solve_nlinear(GridSize, area, mu, center=(0.5, 0.5), Picard_maxiter=1000):

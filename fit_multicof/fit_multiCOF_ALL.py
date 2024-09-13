@@ -24,7 +24,7 @@ class Trainer(BaseTrainer):
         
     @property
     def name(self):
-        return f"{self.tag}-{self.GridSize}-{self.net.name()}-{self.method}-{self.maxiter}-{self.trainN}-{self.batch_size}"
+        return f"{self.tag}"
     
     def reboot(self):
         self.init_traindl()
@@ -59,7 +59,7 @@ class Trainer(BaseTrainer):
         elif self.net_kwargs['in_channels'] == 1:
             train_ds = C1Ds(self.start, self.trainN, self.area, self.GridSize, self.dtype, self.device) 
             
-        self.train_dl = DataLoader(train_ds, self.batch_size, shuffle=True, )
+        self.train_dl = DataLoader(train_ds, self.batch_size, shuffle=True, num_workers=0)
 
     def init_valdl(self):         
         if self.net_kwargs['in_channels'] == 3:
@@ -75,42 +75,44 @@ class Trainer(BaseTrainer):
         match self.method:
             case 'jac':
                 generator = JacBatched(A, self.dtype, self.device)
+            # case 'desc':
+
             case 'cg':
                 generator = CGBatched(A, self.dtype, self.device)
         monitor = BatchedMonitor(A, self.dtype, self.device)
         return generator, monitor
+    
+    def predict(self, data):
+        return self.net(data)
 
-    def train_step(self, data, A, B, maxiter):
+    def train_step(self, data, i, v, B, maxiter):
         # Get the generator and monitor
+        A = batchediv2tensor(i, v, self.GridSize, self.dtype, self.device)
         generator, monitor = self.init_generator_monitor(A)
         
         # Do prediction
-        pre = self.net(data)
+        pre = self.predict(data)
 
         with torch.no_grad():
-            labels = generator(
-                    torch.clone(torch.detach(pre)), 
-                    B[..., None], maxiter
-                    )
-            loss_val = self.loss_fn(labels, pre).item()
+            error = monitor(pre, B[..., None])
+            labels = generator(torch.clone(torch.detach(pre)), B[..., None], maxiter)
+
+        loss = self.loss_fn(labels, pre)
             
-        error = monitor(pre, B[..., None])
-
-        # loss = self.loss_fn(labels, pre)
-
         self.optimizer.zero_grad()
-        error.backward()
+        loss.backward()
         self.optimizer.step()
 
-        # loss_val = loss.item()
+        loss_val = loss.item()
         self.writer.add_scalar("Train-SubIterLoss", loss_val, self.train_global_idx)
         self.writer.add_scalar("Train-Error", error, self.train_global_idx)
         self.train_global_idx += 1
 
         return error.item(), loss_val
 
-    def val_step(self, data, A,  B, U, maxiter):
+    def val_step(self, data, i, v, B, U, maxiter):
         # Get the generator and monitor
+        A = batchediv2tensor(i, v, self.GridSize, self.dtype, self.device)
         generator, monitor = self.init_generator_monitor(A)
 
         # Prediction
@@ -128,8 +130,8 @@ class Trainer(BaseTrainer):
     def train_loop(self):
         self.net.train()
         errors = []
-        for data, cofs, A, B, U in tqdm(self.train_dl, desc='Training Loop:', position=1, leave=False):
-            error, loss_val = self.train_step(data, A, B, self.maxiter)
+        for data, cofs, i, v, B, U in tqdm(self.train_dl, desc='Training Loop:', position=1, leave=False):
+            error, loss_val = self.train_step(data, i, v, B, self.maxiter)
 
             errors.append(error)
         self.lr_scheduler.step()
@@ -138,8 +140,8 @@ class Trainer(BaseTrainer):
     def val_loop(self):
         self.net.eval()
         val_errors, real_loss_vals = [], []
-        for data, cofs, A, B, U in tqdm(self.val_dl, desc='Validation Loop:', position=2, leave=False):
-            pre, real_loss, subiter_loss, error = self.val_step(data, A, B, U, self.maxiter)
+        for data, cofs, i, v, B, U in tqdm(self.val_dl, desc='Validation Loop:', position=2, leave=False):
+            pre, real_loss, subiter_loss, error = self.val_step(data, i, v, B, U, self.maxiter)
 
             val_errors.append(error)
             real_loss_vals.append(real_loss)
@@ -164,11 +166,8 @@ class Trainer(BaseTrainer):
         self.writer.add_figure(f"ValFigure", fig, self.val_global_idx)
 
 if __name__ == '__main__':
-    # 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'
     GridSize = 96
-    tag = 'JJQC3-Norm-Res'
-    # torch.multiprocessing.set_start_method('spawn')
-
+    tag = 'VaryUNetC3tanh-jac15'
     trainer = Trainer(
         method='jac',
         maxiter=15,
@@ -178,9 +177,9 @@ if __name__ == '__main__':
         valN=100,
         batch_size=5,
         net_kwargs={
-            'model_name': 'segmodel',
+            'model_name': 'varyunet',
             'Block': "ResBottleNeck",
-            'planes':8,
+            'planes':16,
             'in_channels':3,
             'classes':1,
             'GridSize':GridSize,
@@ -188,11 +187,12 @@ if __name__ == '__main__':
             'adaptor_nums': [4, 4, 6, 6, 8],
             'factor':2,
             'norm_method': 'layer',
-            'pool_method':'max',
+            'pool_method':'avg',
             'padding':'same',
-            'padding_mode':'reflect',
+            'padding_mode':'replicate',
             'end_padding':'same',
-            'end_padding_mode':'reflect',
+            'end_padding_mode':'replicate',
+            'act': 'tanh'
         },
         log_dir=f'./all_logs',
         lr=1e-3,

@@ -129,9 +129,10 @@ class ChipsDataGenerator:
             sparse.save_npz(save_path/'A.npz', A)
             np.save(save_path/'b.npy', b)
             if solve:
-                B = Force.reshape(self.dataN, -1) * h**2 + b[np.newaxis, ...]
-                U = spsolve(A, B.transpose()).transpose().reshape((self.dataN, GridSize, GridSize))
+                B = Force.reshape(self.DataN, -1) * h**2 + b[np.newaxis, ...]
+                U = spsolve(A, B.transpose()).transpose().reshape((self.DataN, GridSize, GridSize))
                 np.save(save_path/'U.npy', U)        
+                print('Solve 1')
 
             # norm_problem = NormChipHeatDissipation(None, case, eps=h**2)
             # A = solver.get_A(norm_problem).tocsr()
@@ -146,15 +147,15 @@ class ChipsDataGenerator:
         return 
 
 if __name__ == '__main__':
-    DataN = 10
+    DataN = 5000
     area = ((0, 0), (0.1, 0.1))
-    boundary_gap = 0.01
-    chip_gap = 0.01
+    boundary_gap = 0.001
+    chip_gap = 0.001
 
     generator = ChipsDataGenerator(DataN, area, boundary_gap, chip_gap)
     generator.generate(
-        './DLdata/info.csv',
-        './DLdata',
-        64,
-        False
+        './TestData/info.csv',
+        './TestData',
+        128,
+        True
     )
