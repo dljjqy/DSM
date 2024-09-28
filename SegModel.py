@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Literal, List
 from typing import Type, Union
-import segmentation_models_pytorch as smp
+# import segmentation_models_pytorch as smp
 
 class BasicBlock(nn.Module):
     def __init__(
@@ -742,8 +742,8 @@ class CNN(nn.Module):
             case 'varyunet':
                 net = VaryUNet(**kwargs)
 
-            case 'unet++':
-                net = smp.UnetPlusPlus(**kwargs)
+            # case 'unet++':
+            #     net = smp.UnetPlusPlus(**kwargs)
             
             # case 'unet':
             #     net = UNet(**kwargs)
