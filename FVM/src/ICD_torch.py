@@ -1,4 +1,4 @@
-# Abstract Base Class of numerical schemes for diffuion problems
+# Abstract Base Class of numerical schemes for diffusion problems
 # import numpy as np
 # import scipy.sparse as sparse
 from .utils import *
