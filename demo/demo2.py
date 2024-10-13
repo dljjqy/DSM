@@ -175,7 +175,6 @@ class JacGenerator(torch.nn.Module):
 			for _ in range(self.maxiter):
 				u = self.jac_step(u, f, kappa)
 		return u
-
 class DescentGenerator(JacGenerator):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -207,44 +206,6 @@ class DescentGenerator(JacGenerator):
 			for i in range(self.maxiter):
 				u = self.step(u, f, kappa)
 		return u
-
-class MatDescentGenerator(JacGenerator):
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-
-	def get_Ab(self, force, kappas):
-		A, B = [], []
-		for i in range(self.batch_size):
-			k = kappas[i].cpu().numpy().squeeze()
-			f = force[i].cpu().numpy().squeeze()
-			A.append(
-				coo2tensor(reaction_A(self.GridSize, k).tocoo(), self.device, self.dtype)
-				)
-			B.append(
-				torch.from_numpy(reaction_b_dir(f, 0.0, self.h))
-				)
-		A = torch.stack(A)
-		B = torch.stack(B).to(self.device).to(self.dtype)
-		return A, B
-	
-	def step(A, B, u):
-		r = B - torch.bmm(A, u)
-		alpha = bvi(r, r) / bvi(r, torch.bmm(A, r))
-		new_u = u + alpha * r
-		return new_u
-	
-	def forward(self, pre, f, kappa):
-		with torch.no_grad():
-			u = torch.clone(torch.detach(pre)).flatten(1,-1)
-			# u = hard_encode(u, 0.0).flatten(1)
-			f = torch.clone(torch.detach(f))
-			kappa = torch.clone(torch.detach(kappa))
-
-			A, B = self.get_Ab(f, kappa)
-			for i in range(self.maxiter):
-				u = self.step(A, B, u)
-		return u.reshape(self.batch_size, 1, self.GridSize, self.GridSize)
-		
 class Trainer(BaseTrainer):
 	def __init__(
 		self,
@@ -311,16 +272,6 @@ class Trainer(BaseTrainer):
 				)
 			case 'Desc':
 				generator = DescentGenerator(
-					self.batch_size,
-					self.GridSize,
-					self.dtype,
-					self.device,
-					maxiter,
-					self.area,
-					self.gd,
-				)
-			case 'MatDesc':
-				generator = MatDescentGenerator(
 					self.batch_size,
 					self.GridSize,
 					self.dtype,
@@ -407,10 +358,10 @@ if __name__ == "__main__":
 	set_seed(0)
 	GridSize = 256
 	tag = "Demo2"
-	for trainN, k in product([100, 500, 5000], [1, 5, 25]):
+	for trainN, k in product([1000], [5]):
 		trainer = Trainer(
 			gd=0,
-			method=f'Jac-{k}',
+			method=f'Desc-{k}',
 			dtype=torch.float,
 			device="cuda",
 			area=((-1, -1), (1, 1)),
