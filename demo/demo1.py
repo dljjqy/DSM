@@ -240,7 +240,6 @@ class Trainer(BaseTrainer):
 		return data.to(self.device).to(self.dtype)
 
 	def train_step(self):
-		# Prediction
 		data = self._get_input_data()
 		pre = self.net(data)
 		
@@ -322,54 +321,63 @@ class Trainer(BaseTrainer):
 
 if __name__ == "__main__":
 	from torch.nn.functional import mse_loss
+
 	from itertools import product
+	import argparse
 	torch.manual_seed(0)
 
-	GridSize = 256
-	method = 'MatRes'
+	parser = argparse.ArgumentParser()
+	parser.add_argument('GridSize',
+						type=int,
+						default=128,
+						help='GridSize')
+	parser.add_argument('K',
+						type=int,
+						default=1,
+						help='K')
+
+	args = parser.parse_args()
+	k = args.K
+	GridSize = args.GridSize
+
+	method = 'ConvRes'
 	act = 'tanh'
-	layer_nums = [2, 2, 2, 2]
 	
-	for k in [1]:
-		# for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['relu', 'tanh'], ['batch', 'layer']):
-		for method, act, norm in product(['Jac-3', 'Desc-3', 'EnergyRes', 'MatRes' ], ['tanh'], ['layer']):
-			tag = f"ONE-k={k}"
-			trainer = Trainer(
-				K=k,
-				method=method,
-				dtype=torch.float,
-				device="cuda",
-				area=((-1, -1), (1, 1)),
-				GridSize=GridSize,
-				trainN=100,
-				valN=1,
-				batch_size=1,
-				net_kwargs=
-				{
-					'model_name': 'varyunet',
-					"Block": 'ResBottleNeck',
-					"planes": 8,
-					"in_channels": 1,
-					"classes": 1,
-					"GridSize": GridSize,
-					"layer_nums": layer_nums,
-					"adaptor_nums": layer_nums,
-					"factor": 2,
-					"norm_method": norm,
-					"pool_method": "max",
-					"padding": "same",
-					"padding_mode": "zeros",
-					"end_padding":"valid",
-					"end_padding_mode": "zeros",
-					"act": act
-				},
-				log_dir=f"./all_logs",
-				lr=1e-2,
-				total_epochs=[150],
-				tag=tag,
-				loss_fn=mse_loss,
-				model_save_path=f"./model_save",
-				hyper_params_save_path=f"./hyper_parameters",
-				)
-			
-			trainer.fit_loop()
+	tag = f"K{k}-{GridSize}-{method}-Float"
+	trainer = Trainer(
+		K=k,
+		method=method,
+		dtype=torch.float,
+		device="cuda",
+		area=((-1, -1), (1, 1)),
+		GridSize=GridSize,
+		trainN=100,
+		valN=1,
+		batch_size=1,
+		net_kwargs={
+			'model_name': 'UNet',
+			'Block': "ResBottleNeck",
+			'planes':8,
+			'in_channels':1,
+			'classes':1,
+			'GridSize':GridSize,
+			'layer_nums':[2,2,2,2],
+			'factor':2,
+			'norm_method': 'layer',
+			'pool_method':'max',
+			'padding':'same',
+			'padding_mode':'zeros',
+			'end_padding':'valid',
+			'end_padding_mode':'zeros',
+			'act': 'tanh',
+		},
+		log_dir=f"./all_logs",
+		lr=1e-2,
+		total_epochs=[45],
+		tag=tag,
+		loss_fn=mse_loss,
+		model_save_path=f"./model_save",
+		hyper_params_save_path=f"./hyper_parameters",
+		)
+	
+	trainer.fit_loop()

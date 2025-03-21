@@ -99,9 +99,13 @@ class ChipsDataGenerator:
                 raise ValueError
         return info
 
-    def generate(self, csv_save_path, data_path, GridSize=128, solve=True):
-        df = self.layout2csv(csv_save_path)
-        h = self.area[-1][-1] / GridSize
+    def generate(self, data_path, GridSize=128, solve=True):
+        F_save_path = Path(f'{data_path}/GridSize-{GridSize}')
+        if not F_save_path.is_dir():
+            F_save_path.mkdir(parents=True)
+
+        df = self.layout2csv(f"{data_path}/info.csv")
+        h = 0.1 / GridSize
         xx, yy = _mesh(self.area, GridSize)
         
         layouts = []
@@ -113,9 +117,6 @@ class ChipsDataGenerator:
         solver = VolumnCenteredScheme(mesh=mesh)
 
         Force = np.stack([f(xx, yy) for f in layouts], axis=0)
-        F_save_path = Path(f'{data_path}/GridSize-{GridSize}')
-        if not F_save_path.is_dir():
-            F_save_path.mkdir(parents=True)
         np.save(F_save_path/'F.npy', Force)
 
         for case in [1, 2, 3]:
@@ -126,36 +127,26 @@ class ChipsDataGenerator:
             problem = ChipHeatDissipation(None, case, eps=h**2)
             A = solver.get_A(problem).tocsr()
             b = solver.get_b(problem)
-            sparse.save_npz(save_path/'A.npz', A)
-            np.save(save_path/'b.npy', b)
             if solve:
                 B = Force.reshape(self.DataN, -1) * h**2 + b[np.newaxis, ...]
                 U = spsolve(A, B.transpose()).transpose().reshape((self.DataN, GridSize, GridSize))
                 np.save(save_path/'U.npy', U)        
-                print('Solve 1')
+                np.save(save_path/'B.npy', B)        
 
-            # norm_problem = NormChipHeatDissipation(None, case, eps=h**2)
-            # A = solver.get_A(norm_problem).tocsr()
-            # b = solver.get_b(norm_problem)
-            # sparse.save_npz(save_path/'normA.npz', A)
-            # np.save(save_path/'normb.npy', b)
+                print(f'Case {case} Solved. ')
 
-            # if solve:
-            #     B = Force.reshape(self.dataN, -1) * h**2 + b[np.newaxis, ...]
-            #     U = spsolve(A, B.transpose()).transpose().reshape((self.dataN, GridSize, GridSize))
-            #     np.save(save_path/'normU.npy', U)
+   
         return 
 
 if __name__ == '__main__':
-    DataN = 5000
+    DataN = 15000
     area = ((0, 0), (0.1, 0.1))
     boundary_gap = 0.001
     chip_gap = 0.001
 
     generator = ChipsDataGenerator(DataN, area, boundary_gap, chip_gap)
     generator.generate(
-        './TestData/info.csv',
-        './TestData',
+        './TrainData',
         128,
         True
     )

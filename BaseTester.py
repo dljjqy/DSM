@@ -38,7 +38,7 @@ class BaseTester:
 
 	def load_ckpt(self, best_or_last, exp_name):
 		self.load_kwargs(exp_name)
-		ckpt = torch.load(f"{self.ckpt_save_path}/{exp_name}/{best_or_last}.pt")
+		ckpt = torch.load(f"{self.ckpt_save_path}/{exp_name}/{best_or_last}.pt", weights_only=True)
 
 		net_kwargs = self.kwargs['net_kwargs'].copy()
 		model_name = net_kwargs.pop('model_name')

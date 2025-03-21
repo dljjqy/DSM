@@ -5,7 +5,10 @@ sys.path.append('../')
 
 import torch
 import numpy as np
-import random
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib import cm
+import matplotlib.lines as mlines
 
 from MyPlot import multi_heat_draw_img as draw_img
 from utils import ChipLayout, layout2csv, coo2tensor
@@ -24,14 +27,10 @@ class Trainer(BaseTrainer):
         self, 
         method, 
         maxiter, 
-        boundary_gap=0.001, 
-        chip_gap=0.001, 
         *args, **kwargs
     ):
         self.method = method
         self.maxiter = maxiter
-        self.boundary_gap = boundary_gap
-        self.chip_gap = chip_gap
         super().__init__(*args, **kwargs)
 
         self.gen_mesh(self.area, self.GridSize)
@@ -46,11 +45,8 @@ class Trainer(BaseTrainer):
 
         self.init_traindl()
         self.init_valdl()
-        # self.init_generator_monitor()
 
     def epoch_reboot(self):
-        # self.init_traindl()
-        # self.init_valdl()
         pass
 
     def gen_mesh(self, area, GridSize):
@@ -83,67 +79,14 @@ class Trainer(BaseTrainer):
         }
         return param
 
-    def gen_layouts(self, DataN):
-        df = layout2csv(
-            DataN, self.area, self.GridSize, self.boundary_gap, self.chip_gap
-        )
-        layouts = []
-
-        for _, data in df.groupby("idx"):
-            info = data.values[:, 1:]
-            chips_layout = ChipLayout(info)
-            layout = chips_layout(self.xx, self.yy)
-            layouts.append(torch.from_numpy(layout))
-        layouts = torch.stack(layouts, dim=0)
-        return layouts
-    
-    def init_linearsys(self):
-        self.Anp = []
-        self.Atorch = []
-        self.B = []
-
-        for bd_case in [0, 1, 2]:
-            A_np = load_npz(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/A.npz')
-            self.Anp.append(A_np)
-            
-            A_torch = coo2tensor(A_np.tocoo(), self.device, self.dtype)
-            self.Atorch.append(A_torch)
-
-            b = np.load(f'./DLdata/GridSize-{self.GridSize}/case-{bd_case}/b.npy')
-            b = torch.from_numpy(b).to(self.dtype).to(self.device)
-            self.B.append(b)
-        
-        self.B = torch.stack(self.B)
-    
-    # def init_generator_monitor(self,):
-    #     self.generator = []
-    #     self.monitor = []
-
-        # for bd_case in [0, 1, 2]:
-        #     self.generator.append(
-        #         JacTorch(self.Atorch[bd_case], self.device, self.dtype)
-        #     )    
-        #     self.monitor.append(
-        #         LinearMonitor(self.Atorch[bd_case], self.dtype, self.device)
-        #     )
-
-    def init_generator_monitor(self, bd_cases):
-        batched_A = []
-        for c in bd_cases:
-            c = c.item()
-            batched_A.append(torch.detach(self.Atorch[c]))
-        batched_A = torch.stack(batched_A)
-        generator = JacBatched(batched_A, self.dtype, self.device)
-        monitor = BatchedMonitor(batched_A, self.dtype, self.device)
-        return generator, monitor
-
     def init_traindl(self):
-        layouts = self.gen_layouts(self.trainN)
         match self.net_kwargs['in_channels']:
+            case 1:
+                train_ds = C1TrainDS(self.GridSize, self.trainN, self.dtype, self.device)
             case 2:
-                train_ds = C2DS(self.area, self.GridSize, layouts, self.dtype, self.device)
-            case 5:
-                train_ds = C5DS(self.area, self.GridSize, layouts, self.dtype, self.device)
+                train_ds = C2TrainDS(self.GridSize, self.trainN, self.dtype, self.device) 
+            case 4:
+                train_ds = C4TrainDs(self.GridSize, self.trainN, self.dtype, self.device) 
 
         self.train_dl = DataLoader(
             train_ds, self.batch_size, shuffle=False, drop_last=False
@@ -152,160 +95,119 @@ class Trainer(BaseTrainer):
     def init_valdl(self):
         layouts = self.gen_layouts(self.valN)
         match self.net_kwargs['in_channels']:
+            case 1:
+                val_ds = C1ValDS(self.GridSize, self.trainN, self.dtype, self.device)
             case 2:
-                val_ds = C2DS(self.area, self.GridSize, layouts, self.dtype, self.device)
-            case 5:
-                val_ds = C5DS(self.area, self.GridSize, layouts, self.dtype, self.device)
+                val_ds = C2ValDS(self.GridSize, self.trainN, self.dtype, self.device) 
+            case 4:
+                val_ds = C4ValDs(self.GridSize, self.trainN, self.dtype, self.device) 
 
         self.val_dl = DataLoader(
             val_ds, self.batch_size, shuffle=False, drop_last=False
         )
 
-    def train_step(self, data, layouts, bd_cases, maxiter):
-        batch_size = layouts.shape[0]
-        
-        # First, we need generator and B
-        generator, monitor = self.init_generator_monitor(bd_cases)
-        B = layouts.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
-        B = B[..., None]
-        
-        # Prediction
+    def train_step(self, data, B, maxiter):
         pre = self.net(data)
 
         # Generate the label by Jac
         with torch.no_grad():
-            label = generator(
-                    torch.clone(torch.detach(pre)),
-                    B, maxiter
-                )
-            error = monitor(pre, B).item()
+            label = self.generator(pre, B, maxiter)
 
-        # with torch.no_grad():
-        #     labels, errors = [], []
-        #     for i in range(batch_size):
-        #         labels.append(
-        #             self.generator[i](pre[i], B[i], maxiter)
-        #             )
-        #         errors.append(
-        #             self.monitor[i](pre[i], B[i]).item()
-        #         )
-        #     label = torch.stack(labels)
-        #     error = np.array(errors).mean()
-        # Compute MSE
         loss = self.loss_fn(pre, label)
         
-        # Backpropagation
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
         loss_val = loss.item()
         self.writer.add_scalar("Train-PinnLoss", loss_val, self.train_global_idx)
-        self.writer.add_scalar("Train-Error", error, self.train_global_idx)
         self.train_global_idx += 1
-
-        return error, loss_val
-
-    def val_step(self, data, layout, boundary, bd_cases, maxiter):
-        batch_size = layout.shape[0]
-
-        # Get generator and monitor
-        generator, monitor = self.init_generator_monitor(bd_cases)
-        B = layout.reshape(batch_size, -1) * self.dx * self.dy + self.B[bd_cases]
-        B = B[..., None]
-
-        # Prediction
-        pre = self.net(data) 
-
-        # Compute the label and error
-        subiter_ans = generator(pre, B, maxiter)
-        
-        # with torch.no_grad():
-        #     labels, errors = [], []
-        #     for i in range(batch_size):
-        #         labels.append(
-        #             self.generator[i](pre[i], B[i], maxiter)
-        #             )
-        #         errors.append(
-        #             self.monitor[i](pre[i], B[i]).item()
-        #         )
-        #     subiter_ans = torch.stack(labels)
-        #     error = np.array(errors).mean()
-        # # Get Real ans
-        real_ans = []
-        for i, bd_case in enumerate(bd_cases):
-            b = B[i].cpu().numpy()  
-            ans = spsolve(self.Anp[bd_case], b)
-            real_ans.append(ans.reshape(1, self.GridSize, self.GridSize))
-
-        real_ans = torch.from_numpy(np.stack(real_ans)).to(self.dtype).to(self.device)
-
-        val_pinn_loss = self.loss_fn(subiter_ans, pre).item()
-        val_real_loss = self.loss_fn(real_ans, pre).item()
-        error = monitor(pre, B).item()
-
-        self.writer.add_scalar("Val-Error", error, self.val_global_idx)
-        self.writer.add_scalar("Val-RealLoss", val_real_loss, self.val_global_idx)
-        self.writer.add_scalar("Val-PinnLoss", val_pinn_loss, self.val_global_idx)
-        self.val_plot(batch_size, pre, real_ans, layout, boundary)
-
-        self.val_global_idx += 1
-
-        return error, val_pinn_loss, val_real_loss
+        return loss_val
 
     def train_loop(self):
         self.net.train()
-        
-        errors = []
-        for data, layouts, _, bd_cases in tqdm(self.train_dl, desc='Training Loop:', leave=False, position=1):
-            error, loss_val = self.train_step(data, layouts, bd_cases, self.maxiter)
-            errors.append(error)
-        
+        loss_vals = []
+        for data, b in tqdm(self.train_dl, desc='Training Loop:', leave=False, position=1):
+            loss_val = self.train_step(data, b, self.maxiter)
+            loss_vals.append(loss_val)
         self.lr_scheduler.step()
-            
-        return np.array(errors).mean()
+        return np.array(loss_vals).mean()
+
+    def val_step(self, data, u):
+        pre = self.net(data) 
+        val_real_loss = self.loss_fn(pre, u).item()
+
+        self.writer.add_scalar("Val-RealLoss", val_real_loss, self.val_global_idx)
+        self.val_plot(pre, u)
+
+        self.val_global_idx += 1
+        return val_real_loss
 
     def val_loop(self):
         self.net.eval()
-
-        errors, pinn_loss, real_loss = [], [], []       
-        for data, layout, boundary, bd_cases in tqdm(self.val_dl, desc='Validation Loop', leave=False, position=2):
-
-            error, val_pinn_loss, val_real_loss = self.val_step(
-                data, layout, boundary, bd_cases, self.maxiter
-            )
-
-            errors.append(error)
+        real_loss = []       
+        for data, u in tqdm(self.val_dl, desc='Validation Loop', leave=False, position=2):
+            val_real_loss = self.val_step(data, u)
             real_loss.append(val_real_loss)
-            pinn_loss.append(val_pinn_loss)
-
-        return np.array(real_loss).mean(), np.array(errors).mean()
+        return np.array(real_loss).mean(), np.array(real_loss).mean()
     
 
-    def val_plot(self, batch_size, pre, ans, layouts, boundaries):
-        pre = pre.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
-        ans = ans.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
-        layouts = layouts.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
-        boundaries = boundaries.cpu().numpy().reshape(batch_size, self.GridSize, self.GridSize)
-        k = random.choice(range(batch_size))
-        fig = draw_img(
-            f"ValFigure",
-            layouts[k],
-            boundaries[k],
-            pre[k],
-            ans[k],
-            self.GridSize,
-            0.1,
-            None,
-        )
+    def val_plot(self, pre, ans):
+        pre = pre[0].cpu().numpy().reshape(self.GridSize, self.GridSize)
+        ans = ans[0].cpu().numpy().reshape(self.GridSize, self.GridSize)
+        fig = plt.figure()
+        fig.suptitle('ValFigure', fontsize=20)
+        fig.set_figheight(20)
+        fig.set_figwidth(20)
+
+        ax1 = fig.add_subplot(2, 2, 1, aspect="equal")
+        ax2 = fig.add_subplot(2, 2, 2, aspect="equal")
+        ax3 = fig.add_subplot(2, 2, 3, aspect="equal")
+        ax4 = fig.add_subplot(2, 2, 4, aspect="equal")
+
+        ax1.set_title(f'Prediction', fontsize=20)
+        ctf = ax1.contourf(self.xx, self.yy, pre, alpha=1, cmap=cm.Spectral_r, levels=50)
+        divider = make_axes_locatable(ax1)
+        cax = divider.new_horizontal(size="2.5%", pad=0.1)
+        fig.add_axes(cax)
+        cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
+        cbar.ax.tick_params(labelsize=20)
+
+        ax2.set_title(f'Reference', fontsize=20)
+        ctf = ax2.contourf(self.xx, self.yy, ans, alpha=1, cmap=cm.Spectral_r, levels=50)
+        divider = make_axes_locatable(ax2)
+        cax = divider.new_horizontal(size="2.5%", pad=0.1)
+        fig.add_axes(cax)
+        cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
+        cbar.ax.tick_params(labelsize=20)
+
+        ax3.set_title(f'Difference', fontsize=20)
+        ctf = ax2.contourf(self.xx, self.yy, np.abs(ans - pre), alpha=1, cmap=cm.Spectral_r, levels=50)
+        divider = make_axes_locatable(ax2)
+        cax = divider.new_horizontal(size="2.5%", pad=0.1)
+        fig.add_axes(cax)
+        cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
+        cbar.ax.tick_params(labelsize=20)
+
+        levels = np.linspace(ans.min(), ans.max(), 10)[2:-2] 
+        ct1 = ax4.contour(self.xx, self.yy, pre, colors='r', linestyles='dashed', linewidths=1.5, levels=levels)
+        ct2 = ax4.contour(self.xx, self.yy, ans, colors='b', linestyles='solid', linewidths=2, levels=levels)
+        ax4.clabel(ct1, inline=False, fontsize=20)
+        ax4.clabel(ct2, inline=False, fontsize=20)
+        blue_line = mlines.Line2D([], [], color='blue', markersize=20, label='ref')
+        red_line = mlines.Line2D([], [], color='red', markersize=20, label='pre')
+        ax4.legend(handles=[blue_line, red_line], fontsize=20 )
+
+        fig.tight_layout()
         self.writer.add_figure(f"ValFigure", fig, self.val_global_idx)
+        plt.close(fig)
 
 
 if __name__ == "__main__":
     from torch.nn.functional import mse_loss
 
     GridSize = 128
-    tag = "VUnetReluC2"
+    tag = "UNetRelu-C2-float"
 
     trainer = Trainer(
         method="jac",
@@ -318,14 +220,13 @@ if __name__ == "__main__":
         valN=10,
         batch_size=5,
         net_kwargs={
-            'model_name': 'varyunet',
+            'model_name': 'UNet',
             'Block': "ResBottleNeck",
-            'planes':8,
+            'planes':6,
             'in_channels':2,
             'classes':1,
             'GridSize':GridSize,
-            'layer_nums':   [4, 4, 6, 6, 8],
-            'adaptor_nums': [4, 4, 6, 6, 8],
+            'layer_nums':   [2, 2, 4, 4, 6],
             'factor':2,
             'norm_method': 'layer',
             'pool_method':'max',

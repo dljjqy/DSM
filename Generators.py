@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.functional import pad as pad
+
 from utils import mmbv, bvi, hard_encode, kappa
 
 def batchediv2tensor(indices, values, GridSize, dtype, device):
@@ -27,30 +29,6 @@ class BatchedL2(nn.Module):
 		diff = (pre - ref)**2 * self.h**2
 		l2_errors = torch.sqrt(torch.sum(diff, dim=0))
 		return l2_errors.mean()
-
-class LinearMonitor(nn.Module):
-	def __init__(self, A, dtype, device):
-		super().__init__()
-		self.A = A.to(dtype).to(device)
-
-	def forward(self, pre, B):
-		u = torch.flatten(pre, 1, -1)[..., None]
-		Au = mmbv(self.A, u)
-		errors = torch.sum((Au - B)**2, dim=0)
-
-		return errors.mean() 
-
-class BatchedMonitor(nn.Module):
-	def __init__(self, A, dtype, device):
-		super().__init__()
-		self.A = A.to(dtype).to(device)
-
-	def forward(self, pre, B):
-		u = torch.flatten(pre, 1, -1)[..., None]
-		Au = torch.bmm(self.A, u)
-
-		errors = torch.sqrt(torch.sum((Au - B)**2, dim=0))
-		return errors.mean()
 
 class PinnGenerator(torch.nn.Module):
 	def __init__(self, GridSize, device, maxiter, area, prev_net=None, gd=0):
@@ -96,47 +74,6 @@ class PinnGenerator(torch.nn.Module):
 				y = self.jac_step(x, y, f, mu)
 		return y
 
-class PinnGenerator_Ju(torch.nn.Module):
-	def __init__(self, batch_size, GridSize, dtype, device, maxiter, area, init_kappa=None, mu=0.1, gd=0):
-		super().__init__()
-		self.batch_size = batch_size
-		self.GridSize = GridSize
-		(left, bottom), (right, top) = area
-		self.h = (right - left) / (GridSize - 1)
-		self.dtype = dtype
-		self.device = device
-		self.maxiter = maxiter
-		self.mu = mu
-		self.gd = gd
-		self.hard_encode = lambda x: hard_encode(x, self.gd)
-		
-		self.k1 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
-		self.k2 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
-		self.k3 = self._get_kernel([[0, 0.5, 0], [0.5, 2, 0.5], [0, 0.5, 0]])
-
-		self.w = init_kappa
-
-	def _get_kernel(self, k):
-		k = torch.tensor(k, requires_grad=True)
-		k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).to(self.dtype).to(self.device)
-		return k
-	
-	def jac_step(self, pre, f):
-		u = self.hard_encode(pre)
-		w = kappa(self.w, self.mu)
-		
-		force = f[..., 1:-1, 1:-1] * self.h**2
-		y1 = F.conv2d(u, self.k1) * w[..., 1: -1, 1: -1]        
-		y2 = F.conv2d(w * u, self.k2)
-		y3 = F.conv2d(w, self.k3)
-		return (force + y1 + y2) / y3
-	
-	def forward(self, pre, f):
-		with torch.no_grad():
-			y = self.jac_step(pre, f)
-			for _ in range(self.maxiter):
-				y = self.jac_step(y, f)
-		return y
 
 class JacBatched(nn.Module):
 	def __init__(self, A,  dtype, device):
@@ -294,140 +231,54 @@ class CGTorch(nn.Module):
 			print(f"error: {r.mean().item():.3e}")
 		return x
 
-# class ICDGenerator(nn.Module):
-# 	def __init__(self, GridSize, dtype, device, maxiter, area):
-# 		self.GridSize = GridSize
-# 		(left, bottom), (right, top) = area
-# 		self.h = (right - left) / (GridSize - 1)
-# 		self.dtype = dtype
-# 		self.device = device
-# 		self.maxiter = maxiter
+class ConvJac(nn.Module):
+	def __init__(self, dtype, device, GridSize, h):
+		super().__init__()
+		self.dtype = dtype
+		self.device = device
+		self.GridSize = GridSize
+		self.h = h
+
+		self.gd = 0
+		self.gn = 1
 	
-# 	def _get_kernel(self, k):
-# 		k = torch.tensor(k, requires_grad=True)
-# 		k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).to(self.dtype).to(self.device)
-# 		return k
-	
-# class NpSolver:
-#     def __init__(self, A, method):
-#         self.A = A
-#         match method:
-#             case 'gmres':
-#                 self.iter = sparse.linalg.gmres
-#             case 'cg':
-#                 self.iter = sparse.linalg.cg
-	
-#     def __call__(self, xs, bs, maxiter):
-#         '''
-#         x: torch.Tensor with shape B x 1 x N x N
-#         b: torch.Tensor with shape B x N**2
-#         '''
-#         original_shape = xs.shape
-#         with torch.no_grad():
-#             x = torch.flatten(xs, 1, -1).cpu().numpy()
-#             b = bs.cpu().numpy()
-#             Y = []
-#             for i in range(original_shape[0]):
-#                 y, _ = self.iter(self.A, b[i].squeeze(), x[i].squeeze(), maxiter=maxiter, tol=1e-15)
-#                 Y.append(y)
-#             Y = torch.from_numpy(np.stack(Y, axis=0).reshape(original_shape))
-#             return Y.type_as(xs)           
-		
-# class EinJacIter(torch.nn.Module):
-#     def __init__(self, A, maxiter=5):
-#         super().__init__()
-		
-#         DigA = torch.diagonal(A, dim1=-2, dim2=-1)
-#         D = torch.stack([torch.diag(i) for i in DigA], dim=0)
-#         M = A - D
-#         self.invD = 1.0 / DigA
-#         self.M = M.clone().detach().float()
-#         self.maxiter = maxiter
-#         self.BatchSize, self.Nx = DigA.shape
+	def forward(self, max_iter, u, b, K):
+		with torch.no_grad():
+			left, right, up, low, diag = self.compute_A(K)
+			y = self.jac_step(u, b, left, right, up, low, diag)
+			for _ in range(1, max_iter):
+				y = self.jac_step(y, b, left, right, up, low, diag)
+			return y
 
-#     def _step(self, x, B):
-#         '''
-#             Matrix A: (BatchSize, Nx, Nx)
-#             RHS B: (BatchSize, Nx)
-#             Input x: (BatchSize, 1, Nx, Nx)
-#         '''
-#         with torch.no_grad():
-#             y = self.invD * (B - torch.einsum('kij,kj->ki', self.M, x))
-#             return y
-		
-#     def fresh_maxiter(self, maxiter):
-#         self.maxiter = maxiter
+	def compute_A(self, K):
+		'''Only up boundary is Dirichlet boundary with gd=0, others are Neumann boundary.
+		The flux over the left and right are gn=0, and the flux over the low side is gn=1.0.
+		'''
+		lbd = 1.0/K
+		left = 2 / (lbd[..., :, 0:-1] + lbd[..., :, 1:])
+		left = pad(left, (1, 0, 0, 0), 'constant')
 
-#     def forward(self, x, B):
-#         with torch.no_grad():
-#             y = x.reshape(self.BatchSize, -1)
-#             y = self._step(y, B)
-#             for _ in range(self.maxiter):
-#                 y = self._step(y, B)
-#             return y.reshape(x.shape)
+		right = 2 / (lbd[..., :, 0:-1,] + lbd[..., :, 1:])
+		right = pad(right, (0, 1, 0, 0), 'constant')
 
-# class OneNLinearSubItr(torch.nn.Module):
-#     def __init__(self, method, maxiter, A, b, ans, batch_size, device='cuda'):
-#         super().__init__()
-#         self.device = device
-#         self.maxiter = maxiter
-#         self.method = method
-#         self._generator(A)
-#         b = torch.from_numpy(b).float()
-#         self.b = b.expand(batch_size, -1).to(device)
-#         self.A = coo2tensor(A.tocoo(), device)
-#         self.ans = torch.from_numpy(ans).to(self.device)
+		top_lbd = pad(lbd, (0, 0, 0, 1), 'constant')
+		up = 2 / (top_lbd[...,0:-1, :] + top_lbd[...,1:, :])
 
-#     def _generator(self, A):
-#         match self.method:
-#             case 'jac':
-#                 self.generator = Jac(A, self.device)
-#             case 'gmres' | 'cg':
-#                 self.generator = NpSolver(A, self.method)
-	
-#     def fresh_maxiter(self, maxiter):
-#         self.maxiter = maxiter
-	
-#     def forward(self, u):
-#         with torch.no_grad():
-#             v = self.generator(u, self.b, self.maxiter)
-#             return v
-		
+		low_flux = 2 / (lbd[...,0:-1,:] + lbd[...,1:,:])
+		low = pad(low_flux, (0,0,1,0), 'constant')
 
-# class PinnGenerator(torch.nn.Module):
-#     def __init__(self, GridSize, device, maxiter, area, gd=0):
-#         super().__init__()
-#         self.GridSize = GridSize
-#         (left, bottom), (right, top) = area
-#         self.h = (right - left) / (GridSize - 1)
-#         self.device = device
-#         self.maxiter = maxiter
-#         self.gd = gd
 
-#         self.k1 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
-#         self.k2 = self._get_kernel([[0, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0]])
-#         self.k3 = self._get_kernel([[0, 0.5, 0], [0.5, 2, 0.5], [0, 0.5, 0]])
+		diag = left + right + up + low
+		return left, right, up, low, diag
 
-#     def _get_kernel(self, k):
-#         k = torch.tensor(k, requires_grad=True)
-#         k = k.view(1, 1, 3, 3).repeat(1, 1, 1, 1).float().to(self.device)
-#         return k
+	def jac_step(self, u, b, left, right, up, low, diag):
+		with torch.no_grad():
+			left_flux = -left * pad(u, (1,0,0,0), 'constant', 0.0)[..., :, :-1]
+			right_flux = -right * pad(u, (0,1,0,0), 'constant', 0.0)[..., :, 1:]
+			low_flux =  -low * pad(u, (0,0,1,0), 'constant', 0.0)[..., :-1, :]
 
-#     def hard_encode(self, x):
-#         y = F.pad(x, (1, 1, 1, 1), 'constant', value=self.gd)
-#         return y
-
-#     def jac_step(self, x, w, f):
-#         u = self.hard_encode(x)
-#         force = f[..., 1:-1, 1:-1] * self.h**2
-#         y1 = F.conv2d(u, self.k1) * w[..., 1: -1, 1: -1]        
-#         y2 = F.conv2d(w * u, self.k2)
-#         y3 = F.conv2d(w, self.k3)
-#         return (force + y1 + y2) / y3
-	
-#     def forward(self, x, w, f):
-#         with torch.no_grad():
-#             y = self.jac_step(x, w, f)
-#             for _ in range(self.maxiter):
-#                 y = self.jac_step(y, w, f)
-#         return y
+			up_flux = -up * (pad(u, (0,0,0,1),'constant', self.gd)[..., 1:, :])
+			
+			# Jacobi
+			pseudo_label = (b - (left_flux + right_flux + up_flux + low_flux)) / diag 
+			return pseudo_label 

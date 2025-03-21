@@ -466,55 +466,42 @@ if __name__ == "__main__":
 	# from itertools import product
 	GridSize = 128
 	method = 'Res'
-	act = 'relu'
 	k = 4
-	for layer_nums in [
-		# [2, 2],
-		# [2, 2, 2],
-		[2, 2, 2, 2],
-		# [2, 2, 2, 2, 2],
-	]:
-	# layer_nums = [2 ,2, 2]
-	# for method, act in product(['Res', 'Jac1', 'Jac5'], ['relu', 'tanh']):
-
-		# tag = f"{method}-{act}"
-		tag = f"k={k};mse"
-		trainer = Trainer(
-			K=k,
-			method=method,
-			dtype=torch.float,
-			device="cuda",
-			area=((-1, -1), (1, 1)),
-			GridSize=GridSize,
-			trainN=500,
-			valN=100,
-			batch_size=10,
-			net_kwargs=
-			{
-				'model_name': 'segmodel',
-				"Block": 'ResBottleNeck',
-				"planes": 8,
-				"in_channels": 1,
-				"classes": 1,
-				"GridSize": GridSize,
-				"layer_nums": layer_nums,
-				"adaptor_nums": layer_nums,
-				"factor": 2,
-				"norm_method": "batch",
-				"pool_method": "avg",
-				"padding": "same",
-				"padding_mode": "zeros",
-				"end_padding":"valid",
-				"end_padding_mode": "zeros",
-				"act": act
-			},
-			log_dir=f"./all_logs",
-			lr=1e-2,
-			total_epochs=[200],
-			tag=tag,
-			loss_fn=mse_loss,
-			model_save_path=f"./model_save",
-			hyper_params_save_path=f"./hyper_parameters",
-			)
-		
-		trainer.fit_loop()
+	tag = f"K={k}-{method}"
+	trainer = Trainer(
+		K=k,
+		method=method,
+		dtype=torch.double,
+		device="cuda",
+		area=((-1, -1), (1, 1)),
+		GridSize=GridSize,
+		trainN=500,
+		valN=100,
+		batch_size=10,
+		net_kwargs={
+			'model_name': 'UNet',
+			'Block': "ResBottleNeck",
+			'planes':8,
+			'in_channels':1,
+			'classes':1,
+			'GridSize':GridSize,
+			'layer_nums':[2,2,2,2],
+			'factor':2,
+			'norm_method': 'layer',
+			'pool_method':'max',
+			'padding':'same',
+			'padding_mode':'zeros',
+			'end_padding':'valid',
+			'end_padding_mode':'zeros',
+			'act': 'tanh',
+		},
+		log_dir=f"./all_logs",
+		lr=1e-2,
+		total_epochs=[60],
+		tag=tag,
+		loss_fn=mse_loss,
+		model_save_path=f"./model_save",
+		hyper_params_save_path=f"./hyper_parameters",
+		)
+	
+	trainer.fit_loop()

@@ -1,11 +1,15 @@
 import torch
 import numpy as np
 from scipy.sparse import load_npz
-from utils import coo2tensor, coo2data
 from torch.utils.data import Dataset
 
+import sys
+sys.path.append('../')
+from utils import coo2tensor, coo2data
+
+
 class C3Ds(Dataset):
-    def __init__(self, start, DataN, area, GridSize, dtype, device, normliza=True):
+    def __init__(self, start, DataN, area, GridSize, dtype, device, normliza=False):
         self.start = start
         self.area = area
         self.GridSize = GridSize
@@ -16,7 +20,7 @@ class C3Ds(Dataset):
             np.arange(left + dx/2, right, dx),
             np.arange(bottom + dy/2, top, dy)
         )
-        self.path = f'./DLdata/{GridSize}'
+        self.path = f'./TrainData/{GridSize}'
         self.DataN = DataN
         self.dtype = dtype
         self.device = device
@@ -71,3 +75,43 @@ class C1Ds(C3Ds):
 
         data = torch.from_numpy(self.a * cof + self.b).to(self.dtype).to(self.device)
         return data[None, ...], cof, i, v, b, u
+
+
+class ConvC1Ds(C3Ds):
+    def __getitem__(self, index):
+        cof = np.load(f"{self.path}/c{self.start + index}.npy")
+        b = np.load(f"{self.path}/b{self.start + index}.npy").reshape(cof.shape)
+        u = np.load(f"{self.path}/u{self.start + index}.npy")
+
+        data = torch.from_numpy(cof).to(self.dtype).to(self.device)
+        K = torch.from_numpy(cof).to(self.dtype).to(self.device)
+        u = torch.from_numpy(u).to(self.dtype).to(self.device)
+        b = torch.from_numpy(b).to(self.dtype).to(self.device)
+        return data[None, ...], K[None, ...], u[None, ...], b[None, ...]
+
+class ConvC3Ds(C3Ds):
+    def __getitem__(self, index):
+        cof = np.load(f"{self.path}/c{self.start + index}.npy")
+        b = np.load(f"{self.path}/b{self.start + index}.npy").reshape(cof.shape)
+        u = np.load(f"{self.path}/u{self.start + index}.npy")
+        data = np.stack([self.xx, self.yy, self.a * cof + self.b], axis=0)
+
+        data = torch.from_numpy(data).to(self.dtype).to(self.device)
+        K = torch.from_numpy(cof).to(self.dtype).to(self.device)
+        u = torch.from_numpy(u).to(self.dtype).to(self.device)
+        b = torch.from_numpy(b).to(self.dtype).to(self.device)
+        return data, K[None, ...], u[None, ...], b[None, ...]
+
+class ConvRandC3Ds(C3Ds):
+    def __getitem__(self, index):
+        # cof = np.load(f"{self.path}/c{self.start + index}.npy")
+        cof = np.random.uniform(0.1, 10, (self.GridSize, self.GridSize))
+        b = np.load(f"{self.path}/b{self.start + index}.npy").reshape(cof.shape)
+        u = np.load(f"{self.path}/u{self.start + index}.npy")
+        data = np.stack([self.xx, self.yy, self.a * cof + self.b], axis=0)
+
+        data = torch.from_numpy(data).to(self.dtype).to(self.device)
+        K = torch.from_numpy(cof).to(self.dtype).to(self.device)
+        u = torch.from_numpy(u).to(self.dtype).to(self.device)
+        b = torch.from_numpy(b).to(self.dtype).to(self.device)
+        return data, K[None, ...], u[None, ...], b[None, ...]
