@@ -232,12 +232,11 @@ class CGTorch(nn.Module):
 		return x
 
 class ConvJac(nn.Module):
-	def __init__(self, dtype, device, GridSize, h):
+	def __init__(self, dtype, device, GridSize):
 		super().__init__()
 		self.dtype = dtype
 		self.device = device
 		self.GridSize = GridSize
-		self.h = h
 
 		self.gd = 0
 		self.gn = 1
@@ -255,17 +254,18 @@ class ConvJac(nn.Module):
 		The flux over the left and right are gn=0, and the flux over the low side is gn=1.0.
 		'''
 		lbd = 1.0/K
-		left = 2 / (lbd[..., :, 0:-1] + lbd[..., :, 1:])
-		left = pad(left, (1, 0, 0, 0), 'constant')
-
-		right = 2 / (lbd[..., :, 0:-1,] + lbd[..., :, 1:])
-		right = pad(right, (0, 1, 0, 0), 'constant')
 
 		top_lbd = pad(lbd, (0, 0, 0, 1), 'constant')
 		up = 2 / (top_lbd[...,0:-1, :] + top_lbd[...,1:, :])
 
 		low_flux = 2 / (lbd[...,0:-1,:] + lbd[...,1:,:])
 		low = pad(low_flux, (0,0,1,0), 'constant')
+
+		left = 2 / (lbd[..., :, 0:-1] + lbd[..., :, 1:])
+		left = pad(left, (1, 0, 0, 0), 'constant')
+
+		right = 2 / (lbd[..., :, 0:-1,] + lbd[..., :, 1:])
+		right = pad(right, (0, 1, 0, 0), 'constant')
 
 
 		diag = left + right + up + low
