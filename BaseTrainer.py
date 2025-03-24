@@ -90,7 +90,7 @@ class BaseTrainer:
     def reboot(self):
         pass
 
-    def epoch_reboot(self):
+    def epoch_reboot(self, epoch_id=0):
         pass
 
     def init_traindl(self):
@@ -132,8 +132,8 @@ class BaseTrainer:
         for epoch_num in self.total_epochs:
             self.reboot()
 
-            for _ in tqdm(range(epoch_num), desc='Training Epoch:', leave=True):
-                self.epoch_reboot()
+            for epoch_id in tqdm(range(epoch_num), desc='Training Epoch:', leave=True):
+                self.epoch_reboot(epoch_id)
 
                 new_train_error = self.train_loop()
                 with torch.no_grad():

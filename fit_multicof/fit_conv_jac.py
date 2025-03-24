@@ -17,7 +17,7 @@ class ConvTrainer(BaseTrainer):
 		self.max_iter = max_iter
 		super().__init__(*args, **kwargs)
 		self.h = 1.0 / self.GridSize
-		self.generator = ConvJac(self.dtype, self.device, self.GridSize, self.h)
+		self.generator = ConvJac(self.dtype, self.device, self.GridSize)
 	
 	@property
 	def name(self):
@@ -129,30 +129,30 @@ class ConvTrainer(BaseTrainer):
 
 if __name__ == '__main__':
 	GridSize = 96
-	tag = '96UNetC3Tanh-ConvJac5-batch12-Double'
+	tag = 'Conv_Double'
 	trainer = ConvTrainer(
 		max_iter=5,
 		area = ((0, 0), (1, 1)),
 		GridSize=GridSize,
 		trainN=10000,
 		valN=100,
-		batch_size=12,
+		batch_size=5,
 		net_kwargs={
 			'model_name': 'UNet',
 			'Block': "ResBottleNeck",
-			'planes':8,
+			'planes':6,
 			'in_channels':3,
 			'classes':1,
 			'GridSize':GridSize,
-			'layer_nums':   [2,2,2,2],
+			'layer_nums':   [2,2,4,4,6],
 			'factor':2,
-			'norm_method': 'batch',
-			'pool_method':'max',
+			'norm_method': 'layer',
+			'pool_method':'avg',
 			'padding':'same',
 			'padding_mode':'reflect',
 			'end_padding':'same',
 			'end_padding_mode':'reflect',
-			'act': 'tanh',
+			'act': 'relu',
 		},
 		log_dir=f'./all_logs',
 		lr=1e-3,

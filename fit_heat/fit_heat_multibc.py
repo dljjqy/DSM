@@ -32,7 +32,7 @@ class ConvJac1(nn.Module):
 		with torch.no_grad():
 			self.left, self.right, self.up, self.low, self.diag = self.compute_A()
 
-	def forward(self, max_iter, u, b):
+	def forward(self, u, b, max_iter):
 		with torch.no_grad():
 			y = self.jac_step(u, b, )
 			for _ in range(1, max_iter):
@@ -69,7 +69,6 @@ class ConvJac1(nn.Module):
 			pseudo_label = (b - (left_flux + right_flux + up_flux + low_flux)) / self.diag 
 			return pseudo_label 
 
-
 class ConvJac2(ConvJac1):
 	def compute_A(self):
 		'''Only left is Dirichlet
@@ -103,7 +102,6 @@ class ConvJac2(ConvJac1):
 			pseudo_label = (b - (left_flux + right_flux + up_flux + low_flux)) / self.diag 
 			return pseudo_label 
 
-
 class ConvJac3(ConvJac1):
 	def compute_A(self):
 		'''All are Neumann but a small window on the low side
@@ -111,7 +109,7 @@ class ConvJac3(ConvJac1):
 		h = 0.1/self.GridSize
 		is_dirichlet = np.arange(h/2, 0.1, h)
 		is_dirichlet = ((is_dirichlet <= 0.0505) * (is_dirichlet >= 0.0495)).astype(bool)
-		
+
 		left = 2 / (self.K[..., :, 0:-1] + self.K[..., :, 1:])
 		left = pad(left, (1, 0, 0, 0), 'constant')
 		
@@ -132,7 +130,7 @@ class ConvJac3(ConvJac1):
 		with torch.no_grad():
 			left_flux = -self.left * pad(u,   (1,0,0,0), 'constant', 0.0)[..., :, :-1]
 			right_flux = -self.right * pad(u, (0,1,0,0), 'constant', 0.0)[..., :, 1:]
-			up_flux = -self.up * pad(u,   (0,0,0,1), 'constant', 0.0)[..., 1:, :]
+			up_flux = -self.up * pad(u, (0,0,0,1), 'constant', 0.0)[..., 1:, :]
 
 			low_flux = -self.low * pad(u, (0,0,1,0), 'constant', self.gd)[..., :-1, :]
 			# Jacobi
@@ -142,16 +140,19 @@ class ConvJac3(ConvJac1):
 class Trainer(BaseTrainer):
 	def __init__(
 		self, 
-		maxiter, 
+		max_iter, 
 		*args, **kwargs
 	):
-		self.maxiter = maxiter
+		self.max_iter = max_iter
 		super().__init__(*args, **kwargs)
 		self.gen_mesh(self.area, self.GridSize)
 
-		self.generator = ConvJac(
-			self.dtype, self.device, self.GridSize, self.dx
-		)
+		self.generators = [
+			ConvJac1(self.dtype, self.device, self.GridSize),
+			ConvJac2(self.dtype, self.device, self.GridSize),
+			ConvJac3(self.dtype, self.device, self.GridSize)
+		]
+		
 	@property
 	def name(self):
 		return f"{self.tag}"
@@ -162,7 +163,10 @@ class Trainer(BaseTrainer):
 		self.init_traindl()
 		self.init_valdl()
 
-	def epoch_reboot(self):
+	def epoch_reboot(self, epoch_id):
+		if (epoch_id+1) % 10 == 0:
+			self.init_traindl()
+			self.init_valdl()
 		pass
 
 	def gen_mesh(self, area, GridSize):
@@ -182,8 +186,8 @@ class Trainer(BaseTrainer):
 	def hyper_param_need2save(self):
 		param = {
 			'GridSize': self.GridSize,
-			'method': self.method,
-			'maxiter': self.maxiter,
+			# 'method': self.method,
+			'max_iter': self.max_iter,
 			'area': self.area,
 			'trainN': self.trainN,
 			'valN': self.valN,
@@ -197,37 +201,37 @@ class Trainer(BaseTrainer):
 
 	def init_traindl(self):
 		match self.net_kwargs['in_channels']:
-			case 1:
-				train_ds = C1TrainDS(self.GridSize, self.trainN, self.dtype, self.device)
 			case 2:
-				train_ds = C2TrainDS(self.GridSize, self.trainN, self.dtype, self.device) 
+				train_ds = C2TrainDS(self.GridSize, self.trainN, self.dtype, self.device, self.batch_size) 
 			case 4:
-				train_ds = C4TrainDs(self.GridSize, self.trainN, self.dtype, self.device) 
-
+				train_ds = C4TrainDs(self.GridSize, self.trainN, self.dtype, self.device, self.batch_size) 		
+				# self.boundaries = c4_load_boundary(self.GridSize)
 		self.train_dl = DataLoader(
-			train_ds, self.batch_size, shuffle=False, drop_last=False
+			train_ds, self.batch_size, shuffle=False, drop_last=False,
 		)
+		# self.train_cases = train_ds.cases
 
 	def init_valdl(self):
-		layouts = self.gen_layouts(self.valN)
 		match self.net_kwargs['in_channels']:
-			case 1:
-				val_ds = C1ValDS(self.GridSize, self.trainN, self.dtype, self.device)
 			case 2:
-				val_ds = C2ValDS(self.GridSize, self.trainN, self.dtype, self.device) 
+				val_ds = C2ValDS(self.GridSize, self.valN, self.dtype, self.device, self.batch_size) 
 			case 4:
-				val_ds = C4ValDs(self.GridSize, self.trainN, self.dtype, self.device) 
+				val_ds = C4ValDs(self.GridSize, self.valN, self.dtype, self.device, self.batch_size) 
 
 		self.val_dl = DataLoader(
 			val_ds, self.batch_size, shuffle=False, drop_last=False
 		)
+		# self.val_cases = val_ds.cases
 
-	def train_step(self, data, B, maxiter):
+	def train_step(self, data, layouts, case_ids, max_iter):
 		pre = self.net(data)
-
+		
 		# Generate the label by Jac
 		with torch.no_grad():
-			label = self.generator(pre, B, maxiter)
+			labels = []
+			for i in range(self.batch_size):
+				labels.append(self.generators[case_ids[i]-1](pre[i], layouts[i]*self.dx**2, max_iter))
+			label = torch.stack(labels).type_as(pre)
 
 		loss = self.loss_fn(pre, label)
 		
@@ -243,8 +247,8 @@ class Trainer(BaseTrainer):
 	def train_loop(self):
 		self.net.train()
 		loss_vals = []
-		for data, b in tqdm(self.train_dl, desc='Training Loop:', leave=False, position=1):
-			loss_val = self.train_step(data, b, self.maxiter)
+		for data, layout, case_id in tqdm(self.train_dl, desc='Training Loop:', leave=False, position=1):
+			loss_val = self.train_step(data, layout, case_id, np.random.randint(1, self.max_iter))
 			loss_vals.append(loss_val)
 		self.lr_scheduler.step()
 		return np.array(loss_vals).mean()
@@ -254,19 +258,19 @@ class Trainer(BaseTrainer):
 		val_real_loss = self.loss_fn(pre, u).item()
 
 		self.writer.add_scalar("Val-RealLoss", val_real_loss, self.val_global_idx)
-		self.val_plot(pre, u)
 
 		self.val_global_idx += 1
-		return val_real_loss
+		return val_real_loss, pre
 
 	def val_loop(self):
 		self.net.eval()
 		real_loss = []       
 		for data, u in tqdm(self.val_dl, desc='Validation Loop', leave=False, position=2):
-			val_real_loss = self.val_step(data, u)
+			val_real_loss, pre = self.val_step(data, u)
 			real_loss.append(val_real_loss)
-		return np.array(real_loss).mean(), np.array(real_loss).mean()
 	
+		self.val_plot(pre, u)
+		return np.array(real_loss).mean(), np.array(real_loss).mean()
 
 	def val_plot(self, pre, ans):
 		pre = pre[0].cpu().numpy().reshape(self.GridSize, self.GridSize)
@@ -298,14 +302,15 @@ class Trainer(BaseTrainer):
 		cbar.ax.tick_params(labelsize=20)
 
 		ax3.set_title(f'Difference', fontsize=20)
-		ctf = ax2.contourf(self.xx, self.yy, np.abs(ans - pre), alpha=1, cmap=cm.Spectral_r, levels=50)
-		divider = make_axes_locatable(ax2)
+		ctf = ax3.contourf(self.xx, self.yy, np.abs(ans - pre), alpha=1, cmap=cm.Spectral_r, levels=50)
+		divider = make_axes_locatable(ax3)
 		cax = divider.new_horizontal(size="2.5%", pad=0.1)
 		fig.add_axes(cax)
 		cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
 		cbar.ax.tick_params(labelsize=20)
 
 		levels = np.linspace(ans.min(), ans.max(), 10)[2:-2] 
+		# levels=None
 		ct1 = ax4.contour(self.xx, self.yy, pre, colors='r', linestyles='dashed', linewidths=1.5, levels=levels)
 		ct2 = ax4.contour(self.xx, self.yy, ans, colors='b', linestyles='solid', linewidths=2, levels=levels)
 		ax4.clabel(ct1, inline=False, fontsize=20)
@@ -323,18 +328,17 @@ if __name__ == "__main__":
 	from torch.nn.functional import mse_loss
 
 	GridSize = 128
-	tag = "UNetRelu-C2-float"
+	tag = "C2_float"
 
 	trainer = Trainer(
-		method="jac",
-		maxiter=5,
-		dtype=torch.float,
+		max_iter=5,
+		dtype=torch.double,
 		device="cuda",
 		area=((0, 0), (0.1, 0.1)),
 		GridSize=GridSize,
-		trainN=10000,
-		valN=10,
-		batch_size=5,
+		trainN=14000,
+		valN=21,
+		batch_size=7,
 		net_kwargs={
 			'model_name': 'UNet',
 			'Block': "ResBottleNeck",

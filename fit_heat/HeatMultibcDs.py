@@ -2,6 +2,8 @@ import torch
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset
+from random import choice
+import itertools
 
 import sys
 sys.path.append('../')
@@ -22,26 +24,27 @@ def case3( x, y):
     return mask * 298
 
 class AbstractClass(Dataset):
-    def __init__(self, GridSize, N, dtype, device, bd_cases=None, usage='val'):
+    def __init__(self, GridSize, N, dtype, device, batch_size=5, usage='val'):
         super(AbstractClass, self).__init__()
         self.GridSize = GridSize
         self.N = N
         self.dtype = dtype
         self.device = device
-        if bd_cases is None:
-            self.cases = np.random.choice([1, 2, 3], N).astype(np.int32)
-        else:
-            self.cases = bd_cases
-
         self._get_data_range(usage)
-        self.layouts = self._load_layouts()
-        self.bd_tensors = self._load_boundary()
-        self.B = self._loadB()
+
+        self.cases = np.random.choice([1,2,3], N)
         match usage:
             case 'val':
+                # self.cases = [choice([1, 2, 3]) for _ in range(N)]
                 self.U = self._loadU()
             case 'train':
                 pass
+                # cases = [choice([[1]*batch_size, [2]*batch_size, [3]*batch_size]) for _ in  range(N//batch_size)]
+                # self.cases = list(itertools.chain(*cases))
+        self.layouts = self._load_layouts()
+        self.bd_tensors = self._load_boundary()
+        # self.B = self._loadB()
+
     
     def _to(self, x):
         return x.to(self.dtype).to(self.device)
@@ -51,7 +54,7 @@ class AbstractClass(Dataset):
     
     def _assemble_data(self, index):
         layout = self.layouts[index]
-        boundary_tensor = self.bd_tensors[self.cases[index]-1]
+        boundary_tensor = self.bd_tensors[self.cases[index]-1].clone()
         data = torch.vstack([boundary_tensor, layout[None, ...]])
         return data
     
@@ -65,33 +68,47 @@ class AbstractClass(Dataset):
                 self.end = self.N
     
     def _loadU(self, ):
-        U = np.zeros((self.N, self.GridSize, self.GridSize)) 
+        U = []
 
         U1 = np.load(f'./TrainData/GridSize-{self.GridSize}/case-1/U.npy')[self.start:self.end].reshape(self.N, self.GridSize, self.GridSize)
         U2 = np.load(f'./TrainData/GridSize-{self.GridSize}/case-2/U.npy')[self.start:self.end].reshape(self.N, self.GridSize, self.GridSize)
         U3 = np.load(f'./TrainData/GridSize-{self.GridSize}/case-3/U.npy')[self.start:self.end].reshape(self.N, self.GridSize, self.GridSize)
-        U[np.bool_(self.cases == 1)] = U1[np.bool_(self.cases == 1)]
-        U[np.bool_(self.cases == 2)] = U2[np.bool_(self.cases == 2)]
-        U[np.bool_(self.cases == 3)] = U3[np.bool_(self.cases == 3)]
+        for i, case in enumerate(self.cases):
+            if case == 1:
+                U.append(U1[i])
+            elif case == 2:
+                U.append(U2[i])
+            elif case == 3:
+                U.append(U3[i])
+        U = np.stack(U) 
         return torch.from_numpy(U)
 
     def _load_layouts(self):
         layouts = np.load(f'./TrainData/GridSize-{self.GridSize}/F.npy')[self.start:self.end]
         return torch.from_numpy(layouts)
 
-    def _loadB(self):
-        B = np.zeros((self.N, self.GridSize, self.GridSize)) 
-        B1 = np.load(f'./TrainData/GridSize-{self.GridSize}/case-{1}/B.npy')[self.start:self.end].reshape(self.N, self.GridSize, self.GridSize)
-        B2 = np.load(f'./TrainData/GridSize-{self.GridSize}/case-{2}/B.npy')[self.start:self.end].reshape(self.N, self.GridSize, self.GridSize)
-        B3 = np.load(f'./TrainData/GridSize-{self.GridSize}/case-{3}/B.npy')[self.start:self.end].reshape(self.N, self.GridSize, self.GridSize)
-
-        B[np.bool_(self.cases == 1)] = B1[np.bool_(self.cases == 1)]
-        B[np.bool_(self.cases == 2)] = B2[np.bool_(self.cases == 2)]
-        B[np.bool_(self.cases == 3)] = B3[np.bool_(self.cases == 3)]
-        return torch.from_numpy(B)  
-
     def _load_boundary(self):
         raise NotImplementedError
+
+def c4_load_boundary(GridSize):
+    return [
+        torch.stack([
+            torch.ones( GridSize, GridSize),
+            torch.zeros(GridSize, GridSize),
+            torch.zeros(GridSize, GridSize),
+        ]),
+        torch.stack([
+            torch.zeros(GridSize, GridSize),
+            torch.ones( GridSize, GridSize),
+            torch.zeros(GridSize, GridSize),
+        ]),
+        torch.stack([
+            torch.zeros(GridSize, GridSize),
+            torch.zeros(GridSize, GridSize),
+            torch.ones(GridSize, GridSize),
+        ])
+        ]
+    
 
 class C4TrainDs(AbstractClass):
     def __init__(self, *args, **kwargs):
@@ -100,26 +117,26 @@ class C4TrainDs(AbstractClass):
     def _load_boundary(self, ):
         return [
         torch.stack([
-            torch.ones( self.GridSize, self.GridSize),
+            torch.ones( self.GridSize, self.GridSize) * 298,
             torch.zeros(self.GridSize, self.GridSize),
             torch.zeros(self.GridSize, self.GridSize),
         ]),
         torch.stack([
             torch.zeros(self.GridSize, self.GridSize),
-            torch.ones(self.GridSize, self.GridSize),
+            torch.ones(self.GridSize, self.GridSize) * 298,
             torch.zeros(self.GridSize, self.GridSize),
         ]),
         torch.stack([
             torch.zeros(self.GridSize, self.GridSize),
             torch.zeros(self.GridSize, self.GridSize),
-            torch.ones(self.GridSize, self.GridSize),
+            torch.ones(self.GridSize, self.GridSize) * 298,
         ])
         ]
     
     def __getitem__(self, index):
-        b = self.B[index][None, ...]
         data = self._assemble_data(index)
-        return self._to(data), self._to(b)
+        layout = self.layouts[index][None, ...]
+        return self._to(data), self._to(layout), self.cases[index]
 
 class C4ValDs(C4TrainDs):
     def __init__(self, *args, **kwargs):
@@ -127,7 +144,7 @@ class C4ValDs(C4TrainDs):
     
     def __getitem__(self, index):
         data = self._assemble_data(index)
-        u = self.U[index]
+        u = self.U[index][None, ...]
         return self._to(data), self._to(u)
 
 class C2TrainDS(AbstractClass):     
@@ -146,36 +163,16 @@ class C2TrainDS(AbstractClass):
         ]
     
     def __getitem__(self, index):
-        b = self.B[index][None, ...]
+        layout = self.layouts[index][None, ...]
         data = self._assemble_data(index)
-        return self._to(data), self._to(b)
+        return self._to(data), self._to(layout), self.cases[index]
 
 class C2ValDS(C2TrainDS):     
     def __init__(self, *args, **kwargs):
         super(C2TrainDS, self).__init__(*args, **kwargs, usage = 'val')
 
     def __getitem__(self, index):
-        u = self.U[index]
+        u = self.U[index][None, ...]
         data = self._assemble_data(index)
         return self._to(data), self._to(u)
-
-class C1TrainDS(AbstractClass):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs, usage='train')
-    
-    def _load_boundary(self):
-        pass
-
-    def __getitem__(self, index):
-        b = self.B[index][None, ...]
-        data = torch.clone(b)
-        return self._to(data), self._to(b)
-
-class C1ValDS(C1TrainDS):
-    def __init__(self, *args, **kwargs):
-        super(C1TrainDS, self).__init__(*args, **kwargs, usage = 'val')
-
-    def __getitem__(self, index):
-        u = self.U[index]
-        data = self.B[index][None, ...]
-        return self._to(data), self._to(u)
+        
