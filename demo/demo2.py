@@ -136,7 +136,7 @@ class ValDs:
 		
 class JacGenerator(torch.nn.Module):
 	def __init__(
-		self, batch_size, GridSize, dtype, device, maxiter, area, gd=0
+		self, batch_size, GridSize, dtype, device, max_iter, area, gd=0
 	):
 		super().__init__()
 		self.batch_size = batch_size
@@ -145,7 +145,7 @@ class JacGenerator(torch.nn.Module):
 		self.h = (right - left) / (GridSize - 1)
 		self.dtype = dtype
 		self.device = device
-		self.maxiter = maxiter
+		self.max_iter = max_iter
 		self.gd = gd
 		self.hard_encode = lambda x: hard_encode(x, self.gd)
 
@@ -172,9 +172,10 @@ class JacGenerator(torch.nn.Module):
 			u = torch.clone(torch.detach(pre))
 			f = torch.clone(torch.detach(f))
 			kappa = torch.clone(torch.detach(kappa))
-			for _ in range(self.maxiter):
+			for _ in range(self.max_iter):
 				u = self.jac_step(u, f, kappa)
 		return u
+
 class DescentGenerator(JacGenerator):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -203,7 +204,7 @@ class DescentGenerator(JacGenerator):
 			u = torch.clone(torch.detach(pre))
 			f = torch.clone(torch.detach(f))
 			kappa = torch.clone(torch.detach(kappa))
-			for i in range(self.maxiter):
+			for i in range(self.max_iter):
 				u = self.step(u, f, kappa)
 		return u
 class Trainer(BaseTrainer):
@@ -219,10 +220,16 @@ class Trainer(BaseTrainer):
 		super().__init__(*args, **kwargs)
 		self.h = 1.0 / (self.GridSize - 1)
 		self.generator = self.init_generator(method)
+	
+	def config_optimizer(self, lr):
+		self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
+		# self.optimizer = torch.optim.LBFGS(self.net.parameters(), lr=lr, max_iter=1, history_size=10, line_search_fn='strong_wolfe')
+		self.optimizer.zero_grad()
+		self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
 
 	@property
 	def name(self):
-		return f"{self.tag}-{self.net.name()}-{self.GridSize}-{self.method}-{self.trainN}"
+		return f"{self.tag}-{self.GridSize}-{self.method}-{self.trainN}"
 
 	def hyper_param_need2save(self):	
 		param = {
@@ -257,8 +264,8 @@ class Trainer(BaseTrainer):
 		pass
 
 	def init_generator(self, method):
-		generator_method, maxiter = method.split('-')
-		maxiter = int(maxiter)
+		generator_method, max_iter = method.split('-')
+		max_iter = int(max_iter)
 		match generator_method:
 			case 'Jac':
 				generator = JacGenerator(
@@ -266,7 +273,7 @@ class Trainer(BaseTrainer):
 					self.GridSize,
 					self.dtype,
 					self.device,
-					maxiter,
+					max_iter,
 					self.area,
 					self.gd,
 				)
@@ -276,7 +283,7 @@ class Trainer(BaseTrainer):
 					self.GridSize,
 					self.dtype,
 					self.device,
-					maxiter,
+					max_iter,
 					self.area,
 					self.gd,
 				)
@@ -288,10 +295,11 @@ class Trainer(BaseTrainer):
 			label = self.generator(torch.clone(torch.detach(pre)), f, kappa)
 
 		train_loss = self.loss_fn(pre, label)
-
+		
 		self.optimizer.zero_grad()
 		train_loss.backward()
 		self.optimizer.step()
+		self.optimizer.zero_grad()
 
 		return train_loss.item()
 
@@ -357,42 +365,42 @@ if __name__ == "__main__":
 
 	set_seed(0)
 	GridSize = 256
-	tag = "Demo2"
-	for trainN, k in product([1000], [5]):
-		trainer = Trainer(
-			gd=0,
-			method=f'Desc-{k}',
-			dtype=torch.float,
-			device="cuda",
-			area=((-1, -1), (1, 1)),
-			GridSize=GridSize,
-			trainN=trainN,
-			valN=100,
-			batch_size=5,
-			net_kwargs={
-				"model_name": "varyunet",
-				"Block": "ResBottleNeck",
-				"planes": 6,
-				"in_channels": 1,
-				"classes": 1,
-				"GridSize": GridSize,
-				"layer_nums": [2, 2, 2, 2],
-				"adaptor_nums": [2, 2, 2, 2],
-				"factor": 2,
-				"norm_method": "layer",
-				"pool_method": "max",
-				"padding": "same",
-				"padding_mode": "zeros",
-				"end_padding": "valid",
-				"end_padding_mode": "zeros",
-				"act": "tanh"
-			},
-			log_dir=f"./all_logs",
-			lr=1e-2,
-			total_epochs=[150],
-			tag=tag,
-			loss_fn=F.mse_loss,
-			model_save_path=f"./model_save",
-			hyper_params_save_path=f"./hyper_parameters",
-		)
-		trainer.fit_loop()
+	# for max_iter in [1, 5, 25]:
+	max_iter = 25
+	tag = "Demo2-less"
+	trainer = Trainer(
+		gd=0,
+		method=f'Jac-{max_iter}',
+		dtype='float',
+		device="cuda",
+		area=((-1, -1), (1, 1)),
+		GridSize=GridSize,
+		trainN=10000,
+		valN=100,
+		batch_size=5,
+		net_kwargs={
+			"model_name": "UNet",
+			"Block": "ResBottleNeck",
+			"planes": 6,
+			"in_channels": 1,
+			"classes": 1,
+			"GridSize": GridSize,
+			"layer_nums": [2, 2, 2, 2],
+			"factor": 2,
+			"norm_method": "layer",
+			"pool_method": "max",
+			"padding": "same",
+			"padding_mode": "zeros",
+			"end_padding": "valid",
+			"end_padding_mode": "zeros",
+			"act": "tanh"
+		},
+		log_dir=f"./Demo2-logs",
+		lr=1e-2,
+		total_epochs=[150],
+		tag=tag,
+		loss_fn=F.mse_loss,
+		model_save_path=f"./Demo2-model_save/",
+		hyper_params_save_path=f"./Demo2-hyper_parameters",
+	)
+	trainer.fit_loop()

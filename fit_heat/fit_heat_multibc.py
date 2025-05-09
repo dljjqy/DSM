@@ -202,10 +202,9 @@ class Trainer(BaseTrainer):
 	def init_traindl(self):
 		match self.net_kwargs['in_channels']:
 			case 2:
-				train_ds = C2TrainDS(self.GridSize, self.trainN, self.dtype, self.device, self.batch_size) 
+				train_ds = C2TrainDS(self.GridSize, self.trainN, self.dtype, self.device) 
 			case 4:
-				train_ds = C4TrainDs(self.GridSize, self.trainN, self.dtype, self.device, self.batch_size) 		
-				# self.boundaries = c4_load_boundary(self.GridSize)
+				train_ds = C4TrainDs(self.GridSize, self.trainN, self.dtype, self.device) 		
 		self.train_dl = DataLoader(
 			train_ds, self.batch_size, shuffle=False, drop_last=False,
 		)
@@ -214,23 +213,27 @@ class Trainer(BaseTrainer):
 	def init_valdl(self):
 		match self.net_kwargs['in_channels']:
 			case 2:
-				val_ds = C2ValDS(self.GridSize, self.valN, self.dtype, self.device, self.batch_size) 
+				val_ds = C2ValDS(self.GridSize, self.valN, self.dtype, self.device) 
 			case 4:
-				val_ds = C4ValDs(self.GridSize, self.valN, self.dtype, self.device, self.batch_size) 
+				val_ds = C4ValDs(self.GridSize, self.valN, self.dtype, self.device) 
 
 		self.val_dl = DataLoader(
 			val_ds, self.batch_size, shuffle=False, drop_last=False
 		)
 		# self.val_cases = val_ds.cases
+	
+	def predict(self, data):
+		return self.net(data)**2 + 298.0
 
 	def train_step(self, data, layouts, case_ids, max_iter):
-		pre = self.net(data)
-		
+		pre = self.predict(data)
+		# print(case_ids)
 		# Generate the label by Jac
 		with torch.no_grad():
 			labels = []
-			for i in range(self.batch_size):
-				labels.append(self.generators[case_ids[i]-1](pre[i], layouts[i]*self.dx**2, max_iter))
+			for i, case_id in enumerate(case_ids):
+				generator = self.generators[case_id-1]
+				labels.append(generator(pre[i], layouts[i]*self.dx**2, max_iter))
 			label = torch.stack(labels).type_as(pre)
 
 		loss = self.loss_fn(pre, label)
@@ -254,7 +257,7 @@ class Trainer(BaseTrainer):
 		return np.array(loss_vals).mean()
 
 	def val_step(self, data, u):
-		pre = self.net(data) 
+		pre = self.predict(data)
 		val_real_loss = self.loss_fn(pre, u).item()
 
 		self.writer.add_scalar("Val-RealLoss", val_real_loss, self.val_global_idx)
@@ -328,21 +331,21 @@ if __name__ == "__main__":
 	from torch.nn.functional import mse_loss
 
 	GridSize = 128
-	tag = "C2_float"
+	tag = "C2_5_298_tanh_square"
 
 	trainer = Trainer(
 		max_iter=5,
-		dtype=torch.double,
+		dtype="float",
 		device="cuda",
 		area=((0, 0), (0.1, 0.1)),
 		GridSize=GridSize,
 		trainN=14000,
-		valN=21,
-		batch_size=7,
+		valN=100,
+		batch_size=5,
 		net_kwargs={
 			'model_name': 'UNet',
 			'Block': "ResBottleNeck",
-			'planes':6,
+			'planes':8,
 			'in_channels':2,
 			'classes':1,
 			'GridSize':GridSize,
@@ -354,7 +357,8 @@ if __name__ == "__main__":
 			'padding_mode':'reflect',
 			'end_padding':'same',
 			'end_padding_mode':'reflect',
-			'act':'relu'
+			'act':'tanh',
+			'end_act':None,
 		},
 		log_dir=f"./all_logs",
 		lr=1e-3,

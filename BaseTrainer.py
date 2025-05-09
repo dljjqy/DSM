@@ -23,13 +23,26 @@ class BaseTrainer:
             loss_fn = torch.nn.functional.mse_loss, 
             model_save_path: str = './model_save', 
             hyper_params_save_path: str = './hyper_parameters/test'):
+        self.dtype_name = dtype
+        match dtype:
+            case 'float':
+                self.dtype = torch.float
+            case 'double':
+                self.dtype = torch.double
+            case _:
+                raise ValueError("dtype must be 'float' or 'double'")
+        self.device = device
+        self.area = area
+        self.GridSize = GridSize
+        self.trainN = trainN
+        self.valN = valN
+        self.batch_size = batch_size
+        self.log_dir = log_dir
+        self.lr = lr
+        self.total_epochs = total_epochs
+        self.tag = tag
+        self.loss_fn = loss_fn
 
-        # Initialize parameters using setattr in a loop
-        params = locals()
-        for name, value in params.items():
-            if name != 'self':
-                setattr(self, name, value)
-        
         self.net_kwargs = net_kwargs.copy()
         self.init_network(net_kwargs)
         
@@ -50,6 +63,9 @@ class BaseTrainer:
 
         self.save_hyper_parameters()
         self.init_tensorboard()
+    
+    # def resume(self, exp_name):
+
 
     @property
     def name(self):

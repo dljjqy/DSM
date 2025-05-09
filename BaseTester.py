@@ -34,7 +34,9 @@ class BaseTester:
 			
 	def load_kwargs(self, exp_name):
 		with open(f"{self.hyper_parameters_save_path}/{exp_name}.json") as file:
-				self.kwargs = json.load(file)
+			kwargs = json.load(file)
+		self.kwargs = kwargs
+		return kwargs
 
 	def load_ckpt(self, best_or_last, exp_name):
 		self.load_kwargs(exp_name)

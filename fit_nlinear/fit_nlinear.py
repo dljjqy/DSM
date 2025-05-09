@@ -181,8 +181,6 @@ class NConvTrainer(BaseTrainer):
         self.init_valdl()
         self.config_optimizer(self.lr)
 
-    def epoch_reboot(self):
-        pass
 
     def init_generator(self, w=None):
         generator = PinnGenerator(
@@ -369,7 +367,7 @@ if __name__ == "__main__":
         subitr_eps=5e-9,
         max_subitr_step=max_inner_loop_step,
         max_picard_step=max_picard_step,
-        dtype=torch.float,
+        dtype="double",
         device="cuda",
         area=((0, 0), (1, 1)),
         GridSize=GridSize,
@@ -377,14 +375,13 @@ if __name__ == "__main__":
         valN=100,
         batch_size=5,
         net_kwargs={
-            "model_name": "segmodel",
+            "model_name": "UNet",
             "Block": "ResBottleNeck",
             "planes": 8,
             "in_channels": 2,
             "classes": 1,
             "GridSize": GridSize,
             "layer_nums": [4, 4, 6, 6, 8],
-            "adaptor_nums": [4, 4, 6, 6, 8],
             "factor": 2,
             "norm_method": "layer",
             "pool_method": "max",

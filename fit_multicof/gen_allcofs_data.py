@@ -76,6 +76,6 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     # print(args.start)
-    gen_data(args.start, args.dataN, args.GridSize, './TrainData')
+    gen_data(args.start, args.dataN, args.GridSize, './TestData')
     # print(time() - start)
     # print(parser.parse_args())

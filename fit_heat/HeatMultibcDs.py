@@ -24,7 +24,7 @@ def case3( x, y):
     return mask * 298
 
 class AbstractClass(Dataset):
-    def __init__(self, GridSize, N, dtype, device, batch_size=5, usage='val'):
+    def __init__(self, GridSize, N, dtype, device, cases=None, usage='val'):
         super(AbstractClass, self).__init__()
         self.GridSize = GridSize
         self.N = N
@@ -32,7 +32,10 @@ class AbstractClass(Dataset):
         self.device = device
         self._get_data_range(usage)
 
-        self.cases = np.random.choice([1,2,3], N)
+        if not cases is None:
+            self.cases = cases
+        else:
+            self.cases = np.random.choice([1,2,3], N)
         match usage:
             case 'val':
                 # self.cases = [choice([1, 2, 3]) for _ in range(N)]

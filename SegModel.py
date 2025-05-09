@@ -212,6 +212,7 @@ class OutputHeader(nn.Module):
         classes,  
         padding='same',
         padding_mode='reflect',
+        end_act=nn.Identity(),
         act=nn.ReLU()):
         super().__init__()
         
@@ -230,8 +231,8 @@ class OutputHeader(nn.Module):
             padding_mode=padding_mode
         )
         self.net = nn.Sequential(
-            conv1, act, conv2
-        )
+            conv1, act, conv2, end_act
+        ) 
         
     def forward(self, x):
         return self.net(x)
@@ -419,7 +420,8 @@ class UNet(nn.Module):
         end_padding='same',
         end_padding_mode = 'reflect',
         center=True,
-        act="relu"
+        act="relu",
+        end_act=None,
         ):
         super().__init__()
         match Block:
@@ -447,6 +449,16 @@ class UNet(nn.Module):
                 self.act = nn.Tanh()
             case 'sin':
                 self.act = Sin()
+        
+        match end_act:
+            case 'relu':
+               self.end_act = nn.ReLU()
+            case 'tanh':
+                self.end_act = nn.Tanh()
+            case 'sin':
+                self.end_act = Sin()
+            case _:
+                self.end_act = nn.Identity()
                 
         self.input_header = InputHeader(
             in_channels=in_channels,
@@ -501,7 +513,8 @@ class UNet(nn.Module):
             classes=classes,
             padding=end_padding,
             padding_mode=end_padding_mode,
-            act = self.act
+            act = self.act,
+            end_act=self.end_act,
         )
     
     def name(self):

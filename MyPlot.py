@@ -4,7 +4,7 @@ import matplotlib.lines as mlines
 from pathlib import Path
 from matplotlib import cm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-
+from matplotlib.ticker import ScalarFormatter
 def fig_ax_for_save(kwargs={}, name='', fontsize=20, height=10, width=10, ticks=True, axis_label=True):
     fig, ax= plt.subplots(subplot_kw=kwargs)
     if name:
@@ -254,7 +254,8 @@ def save_ctf(path, pre, ans, xx, yy, vmin=None, vmax=None, name=None, cmap=cm.Sp
     divider = make_axes_locatable(ax)
     cax = divider.new_horizontal(size="2.5%", pad=0.1)
     fig.add_axes(cax)
-    cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
+    cbar = fig.colorbar(ctf, cax=cax, orientation="vertical", format='%.0e')
+    # cbar.formatter.set_powerlimits((0, 0))
     # cbar=plt.colorbar(ctf, shrink=0.85, ax=ax)
     cbar.ax.tick_params(labelsize=20)
     fig.savefig(f"{path}/diff_{name}.png", bbox_inches='tight')
@@ -274,18 +275,22 @@ def save_ctf(path, pre, ans, xx, yy, vmin=None, vmax=None, name=None, cmap=cm.Sp
     fig.savefig(f"{path}/ctf_pre_{name}.png", bbox_inches='tight')
     plt.close(fig)
 
+    # formatter = ScalarFormatter()
+    # formatter.set_scientific(True)
     fig, ax = fig_ax_for_save({},height=10, width=10, ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
     ctf = ax.contourf(xx, yy, ans, alpha=1, cmap=cmap, levels=50)
     divider = make_axes_locatable(ax)
     cax = divider.new_horizontal(size="2.5%", pad=0.1)
     fig.add_axes(cax)
-    cbar = fig.colorbar(ctf, cax=cax, orientation="vertical" )
+    cbar = fig.colorbar(ctf, cax=cax, orientation="vertical")
+    # cbar.formatter.set_powerlimits((0, 0))
     cbar.ax.tick_params(labelsize=20)
+
     fig.savefig(f"{path}/ctf_ref_{name}.png", bbox_inches='tight')
     plt.close(fig)
 
-def save_contour(path, pre, ans, xx, yy, levels):
+def save_contour(path, pre, ans, xx, yy, levels, name='ct'):
     # plot contour of prediction and real answer
     fig, ax = fig_ax_for_save({}, height=10, width=10, ticks=False, axis_label=False)
     ax.set_aspect('equal', adjustable='box')
@@ -303,7 +308,7 @@ def save_contour(path, pre, ans, xx, yy, levels):
     blue_line = mlines.Line2D([], [], color='blue', markersize=20, label='ref')
     red_line = mlines.Line2D([], [], color='red', markersize=20, label='pre')
     ax.legend(handles=[blue_line, red_line], fontsize=16 )
-    fig.savefig(f"{path}/ct.png", bbox_inches='tight')
+    fig.savefig(f"{path}/{name}.png", bbox_inches='tight')
     plt.close(fig)
 
 def save_img(path, f, pre, ans, xx, yy, levels=None, cmap=cm.Spectral_r):
