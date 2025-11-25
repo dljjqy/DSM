@@ -32,9 +32,11 @@ issn = {0021-9991},
 
 This paper focuses on constructing deep surrogate models for solving reaction–diffusion problems.   
 It is easy to observe that when training neural networks using traditional numerical schemes, the following inequality holds:
+
 $$
 \|u - u_\theta \| \leq \|u - u^h\| + \|u^h - u_\theta\|,
 $$
+
 where $u$, $u^h$, and $u_\theta$ denote the exact solution, the numerical solution, and the neural network prediction, respectively.  Therefore, in this paper, we only focus on the optimization error that we are able to reduce, without expecting the surrogate model to surpass the accuracy of traditional numerical schemes.
 
 - The first term on the right-hand side, $\|u - u^h\|$, comes from the traditional numerical discretization—it could be understood as the intrinsic error carried by the data.  
