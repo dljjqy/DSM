@@ -35,10 +35,10 @@ It is easy to observe that when training neural networks using traditional numer
 $$
 \|u - u_\theta \| \leq \|u - u^h\| + \|u^h - u_\theta\|,
 $$
-where \(u\), \(u^h\), and \(u_\theta\) denote the exact solution, the numerical solution, and the neural network prediction, respectively.  
+where $u$, $u^h$, and $u_\theta$ denote the exact solution, the numerical solution, and the neural network prediction, respectively.  
 
-- The first term on the right-hand side, \(\|u - u^h\|\), comes from the traditional numerical discretization—it could be understood as the intrinsic error carried by the data.  
-- The second term, \(\|u^h - u_\theta\|\), is the optimization error introduced during the training of the deep surrogate model and is the only part we can control by tuning the training process.  
+- The first term on the right-hand side, $\|u - u^h\|$, comes from the traditional numerical discretization—it could be understood as the intrinsic error carried by the data.  
+- The second term, $\|u^h - u_\theta\|$, is the optimization error introduced during the training of the deep surrogate model and is the only part we can control by tuning the training process.  
 
 Therefore, in this paper, we only focus on the optimization error that we are able to reduce, without expecting the surrogate model to surpass the accuracy of traditional numerical schemes.
 
