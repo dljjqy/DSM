@@ -466,12 +466,12 @@ if __name__ == "__main__":
 	# from itertools import product
 	GridSize = 128
 	method = 'Res'
-	k = 4
+	k = 1
 	tag = f"K={k}-{method}"
 	trainer = Trainer(
 		K=k,
 		method=method,
-		dtype=torch.double,
+		dtype='float',
 		device="cuda",
 		area=((-1, -1), (1, 1)),
 		GridSize=GridSize,
@@ -481,7 +481,7 @@ if __name__ == "__main__":
 		net_kwargs={
 			'model_name': 'UNet',
 			'Block': "ResBottleNeck",
-			'planes':8,
+			'planes':4,
 			'in_channels':1,
 			'classes':1,
 			'GridSize':GridSize,
@@ -493,7 +493,7 @@ if __name__ == "__main__":
 			'padding_mode':'zeros',
 			'end_padding':'valid',
 			'end_padding_mode':'zeros',
-			'act': 'tanh',
+			'act': 'relu',
 		},
 		log_dir=f"./all_logs",
 		lr=1e-2,

@@ -12,9 +12,18 @@
 
 
 */hyper_parameters/
+*/*hyper_params/
+*/*hyper_parameters/
+*/*/*hyper_parameters/
 */model_save/
+*/*model_save/
+
 */all_logs/
+*/*logs/
+
 */images/
+*/*images/
 /all_logs/
 /model_save/
 /images/
+/.vscode/

@@ -207,6 +207,7 @@ class DescentGenerator(JacGenerator):
 			for i in range(self.max_iter):
 				u = self.step(u, f, kappa)
 		return u
+		
 class Trainer(BaseTrainer):
 	def __init__(
 		self,
