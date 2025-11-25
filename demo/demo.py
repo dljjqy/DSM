@@ -304,6 +304,7 @@ class Trainer(BaseTrainer):
 		self.monitor = ResMonitor(self.dtype, self.device, self.h, self.loss_fn)
 		self.force = torch.from_numpy(f0(self.xx, self.yy, K)).to(self.dtype).to(self.device)
 		self.ans = torch.from_numpy(u0(self.xx, self.yy, K)).to(self.dtype).to(self.device)
+		self.data = torch.from_numpy(np.stack([self.xx, self.yy])).to(self.dtype).to(self.device)
 
 	@property
 	def name(self):
@@ -353,8 +354,9 @@ class Trainer(BaseTrainer):
 		# Prediction
 		Q = torch.from_numpy(np.random.uniform(1, 2, (self.batch_size, 1, 1, 1))).to(self.dtype).to(self.device)
 		forces = torch.clone(torch.detach(Q * self.force[None, None, ...]))
+		# data = torch.clone(torch.detach(forces))
+		data = torch.clone(self.data).detach().repeat(self.batch_size, 1, 1, 1)
 		refs = torch.clone(torch.detach(Q * self.ans[None, None, ...]))
-		data = torch.clone(torch.detach(forces))
 
 		# refs, forces = [], []
 		# for i in range(self.batch_size):
@@ -367,7 +369,7 @@ class Trainer(BaseTrainer):
 		# forces = torch.from_numpy(np.stack(forces)).to(self.dtype).to(self.device)
 		# refs = torch.from_numpy(np.stack(refs)).to(self.dtype).to(self.device)
 		# data = torch.clone(torch.detach(forces))
-			
+		
 		pre = self.net(data)
 		loss = self.loss(pre, forces, refs)
 		
@@ -388,8 +390,9 @@ class Trainer(BaseTrainer):
 	def val_step(self, ):
 		Q = torch.from_numpy(np.random.uniform(1, 2, (self.batch_size, 1, 1, 1))).to(self.dtype).to(self.device)
 		forces = torch.clone(torch.detach(Q * self.force[None, None, ...]))
+		# data = torch.clone(torch.detach(forces))
+		data = torch.clone(self.data).detach().repeat(self.batch_size, 1, 1, 1)
 		refs = torch.clone(torch.detach(Q * self.ans[None, None, ...]))
-		data = torch.clone(torch.detach(forces))
 		
 		# refs, forces = [], []
 		# for i in range(self.batch_size):
@@ -464,7 +467,7 @@ class Trainer(BaseTrainer):
 if __name__ == "__main__":
 	from torch.nn.functional import mse_loss
 	# from itertools import product
-	GridSize = 128
+	GridSize = 256
 	method = 'Res'
 	k = 1
 	tag = f"K={k}-{method}"
@@ -475,29 +478,29 @@ if __name__ == "__main__":
 		device="cuda",
 		area=((-1, -1), (1, 1)),
 		GridSize=GridSize,
-		trainN=500,
+		trainN=100,
 		valN=100,
-		batch_size=10,
+		batch_size=1,
 		net_kwargs={
 			'model_name': 'UNet',
 			'Block': "ResBottleNeck",
-			'planes':4,
-			'in_channels':1,
+			'planes':8,
+			'in_channels':2,
 			'classes':1,
 			'GridSize':GridSize,
 			'layer_nums':[2,2,2,2],
 			'factor':2,
-			'norm_method': 'layer',
+			'norm_method': 'batch',
 			'pool_method':'max',
 			'padding':'same',
 			'padding_mode':'zeros',
 			'end_padding':'valid',
 			'end_padding_mode':'zeros',
-			'act': 'relu',
+			'act': 'tanh',
 		},
 		log_dir=f"./all_logs",
-		lr=1e-2,
-		total_epochs=[60],
+		lr=1e-3,
+		total_epochs=[50],
 		tag=tag,
 		loss_fn=mse_loss,
 		model_save_path=f"./model_save",
