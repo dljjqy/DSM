@@ -34,13 +34,13 @@ This paper focuses on constructing deep surrogate models for solving reaction–
 It is easy to observe that when training neural networks using traditional numerical schemes, the following inequality holds:
 
 $$
-\|u - u_\theta \| \leq \|u - u^h\| + \|u^h - u_\theta\|,
+||u - u_\theta || \leq ||u - u^h || + || u^h - u_\theta ||,
 $$
 
 where $u$, $u^h$, and $u_\theta$ denote the exact solution, the numerical solution, and the neural network prediction, respectively.  Therefore, in this paper, we only focus on the optimization error that we are able to reduce, without expecting the surrogate model to surpass the accuracy of traditional numerical schemes.
 
-- The first term on the right-hand side, $\|u - u^h\|$, comes from the traditional numerical discretization—it could be understood as the intrinsic error carried by the data.  
-- The second term, $\|u^h - u_\theta\|$, is the optimization error introduced during the training of the deep surrogate model and is the only part we can control by tuning the training process.  
+- The first term on the right-hand side, $||u - u^h||$, comes from the traditional numerical discretization—it could be understood as the intrinsic error carried by the data.  
+- The second term, $||u^h - u_\theta||$, is the optimization error introduced during the training of the deep surrogate model and is the only part we can control by tuning the training process.  
 - Then, using the __incomplete iterative generator__ to generate pseudo-label data for a robustly, unsupervised training process, as it implicitly enhances the dataset while avoiding the introduction of linear systems during backpropagation.
 - For the nonlinear problem, if you use the Picard iteration and need a $u_0$ to start the training, we recommond use the $u_0$ which you would use for the traditional numerical schemes. And for the nonlinear problem defined in this paper, we use the __ALL ONES__ matrix to initialize the training.
 
@@ -52,4 +52,4 @@ Overall, for different PDEs, when constructing deep surrogate models using the p
 - Next, depending on the characteristics of the problem, such as multiscale behavior or high-frequency components, we should select different network architectures to reduce the optimization error as much as possible; in other words, we need to choose an *excellent student*.  
 
 __Finally, patience is crucial during training.__  
-Except for the simple examples discussed in the `__demo__` folder, all other application problems in this codebase require extensive computation time for training and hyperparameter tuning.  This is inherently determined by the complexity of parametric PDEs. While we aim to reduce the optimization error as much as possible, we must also prevent overfitting. This often requires sampling a large number of parameter instances to support the training of the neural network, which naturally leads to a large number of optimization steps, in other words, significant computational time.
+Except for the simple examples discussed in the __demo__ folder, all other application problems in this codebase require extensive computation time for training and hyperparameter tuning.  This is inherently determined by the complexity of parametric PDEs. While we aim to reduce the optimization error as much as possible, we must also prevent overfitting. This often requires sampling a large number of parameter instances to support the training of the neural network, which naturally leads to a large number of optimization steps, in other words, significant computational time.
