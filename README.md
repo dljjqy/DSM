@@ -40,6 +40,7 @@ where $u$, $u^h$, and $u_\theta$ denote the exact solution, the numerical soluti
 - The first term on the right-hand side, $\|u - u^h\|$, comes from the traditional numerical discretization—it could be understood as the intrinsic error carried by the data.  
 - The second term, $\|u^h - u_\theta\|$, is the optimization error introduced during the training of the deep surrogate model and is the only part we can control by tuning the training process.  
 - Then, using the __incomplete iterative generator__ to generate pseudo-label data for a robustly, unsupervised training process, as it implicitly enhances the dataset while avoiding the introduction of linear systems during backpropagation.
+- For the nonlinear problem, if you use the Picard iteration and need a $u_0$ to start the training, we recommond use the $u_0$ which you would use for the traditional numerical schemes. And for the nonlinear problem defined in this paper, we use the __ALL ONES__ matrix to initialize the training.
 
 Therefore, in this paper, we only focus on the optimization error that we are able to reduce, without expecting the surrogate model to surpass the accuracy of traditional numerical schemes.
 
