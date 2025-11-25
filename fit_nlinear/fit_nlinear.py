@@ -51,19 +51,19 @@ class C2MuValDs(Dataset):
             np.linspace(left, right, GridSize), np.linspace(bottom, top, GridSize)
         )
         self.xx, self.yy = torch.from_numpy(xx), torch.from_numpy(yy)
-        self.center_points = list(
-            product(torch.arange(0.1, 1, 0.1), np.arange(0.1, 1, 0.1))
-        )
+        
         self.area = area
 
         U = np.load(f"DLdata/{GridSize}/U.npy")
-        self.U = torch.from_numpy(U).float()
+        self.U = torch.from_numpy(U)
+        F = np.load(f"DLdata/{GridSize}/F.npy")
+        self.F = torch.from_numpy(F)
 
     def __len__(self):
-        return len(self.center_points)
+        return self.F.shape[0]
 
     def __getitem__(self, index):
-        f = force(self.xx, self.yy, self.center_points[index]).to(self.dtype).to(self.device)
+        f = self.F[index].to(self.dtype).to(self.device)
         mu = torch.ones_like(f) * 0.1
         data = torch.stack([f, mu]).to(self.dtype).to(self.device)
 
@@ -174,7 +174,7 @@ class NConvTrainer(BaseTrainer):
 
     def init_valdl(self):
         val_ds = C2MuValDs(self.GridSize, self.dtype, self.device, self.area)
-        self.val_dl = DataLoader(val_ds, 1, shuffle=True)
+        self.val_dl = DataLoader(val_ds, 1, shuffle=False)
 
     def reboot(self):
         self.init_traindl()
@@ -196,13 +196,13 @@ class NConvTrainer(BaseTrainer):
         return generator
 
     def val_plot(self, u, f, ans, name):
-        u = u.reshape(self.GridSize, self.GridSize)
+        u = u[0].reshape(self.GridSize, self.GridSize)
         u = u.detach().cpu().numpy()
 
-        force = f.reshape(self.GridSize, self.GridSize)
+        force = f[0].reshape(self.GridSize, self.GridSize)
         force = force.detach().cpu().numpy()
 
-        ans = ans.reshape(self.GridSize, self.GridSize)
+        ans = ans[0].reshape(self.GridSize, self.GridSize)
         ans = ans.detach().cpu().numpy()
 
         fig = draw_img("Validation", force, 0.1, u, ans, self.GridSize, a=1.0)
@@ -257,6 +257,7 @@ class NConvTrainer(BaseTrainer):
             ):
             new_pre, inner_loop_step = self.picard_train_step(x, f, mu, generator)
             inner_loop_steps.append(inner_loop_step)
+            
             with torch.no_grad():
                 picard_error = self.l2_loss(old_pre, new_pre).item()
 
@@ -357,17 +358,17 @@ if __name__ == "__main__":
     GridSize = 128
     max_inner_loop_step = 1
 
-    max_picard_step = 1
+    max_picard_step = 5
     
-    tag = f"Picard={max_picard_step}"
+    tag = f"FLOAT-Picard={max_picard_step}"
     trainer = NConvTrainer(
         gd=0,
         maxiter=10,
-        picard_eps=1e-8,
+        picard_eps=1e-7,
         subitr_eps=5e-9,
         max_subitr_step=max_inner_loop_step,
         max_picard_step=max_picard_step,
-        dtype="double",
+        dtype="float",
         device="cuda",
         area=((0, 0), (1, 1)),
         GridSize=GridSize,
@@ -384,12 +385,12 @@ if __name__ == "__main__":
             "layer_nums": [4, 4, 6, 6, 8],
             "factor": 2,
             "norm_method": "layer",
-            "pool_method": "max",
+            "pool_method": "avg",
             "padding": "same",
-            "padding_mode": "zeros",
+            "padding_mode": "replicate",
             "end_padding_mode": "zeros",
             "end_padding": "valid",
-            "act":"tanh"
+            "act":"relu"
         },
         log_dir=f"./all_logs",
         lr=1e-3,

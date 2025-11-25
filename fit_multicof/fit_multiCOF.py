@@ -33,8 +33,8 @@ class Trainer(BaseTrainer):
 		self.init_valdl()
 		self.config_optimizer(self.lr)
 
-	def epoch_reboot(self):
-		pass
+	# def epoch_reboot(self):
+	# 	pass
 	
 	def hyper_param_need2save(self):
 		kwargs = {
@@ -106,7 +106,7 @@ class Trainer(BaseTrainer):
 		self.writer.add_scalar("Train-SubIterLoss", loss_val, self.train_global_idx)
 		self.train_global_idx += 1
 
-		return  loss_val
+		return  loss_val, None
 
 	def val_step(self, data, i, v, B, U, max_iter):
 		# Get the generator and monitor
@@ -122,7 +122,7 @@ class Trainer(BaseTrainer):
 		val_pinn_loss = self.loss_fn(labels, pre).item()
 		val_real_loss = self.loss_fn(U, pre).item()
 
-		return pre, val_real_loss, val_pinn_loss
+		return pre, val_real_loss, val_pinn_loss, val_real_loss
 
 	def train_loop(self):
 		self.net.train()
@@ -171,18 +171,17 @@ if __name__ == '__main__':
 		max_iter=5,
 		area = ((0, 0), (1, 1)),
 		GridSize=GridSize,
-		trainN=10000,
+		trainN=15000,
 		valN=100,
 		batch_size=5,
 		net_kwargs={
-			'model_name': 'varyunet',
+			'model_name': 'UNet',
 			'Block': "ResBottleNeck",
 			'planes':16,
 			'in_channels':3,
 			'classes':1,
 			'GridSize':GridSize,
 			'layer_nums':   [4, 4, 6, 6, 8],
-			'adaptor_nums': [4, 4, 6, 6, 8],
 			'factor':2,
 			'norm_method': 'layer',
 			'pool_method':'avg',
@@ -199,7 +198,7 @@ if __name__ == '__main__':
 		tag = tag,
 		total_epochs=[150],
 		device='cuda',
-		dtype=torch.float,
+		dtype='float',
 		hyper_params_save_path=f'./hyper_parameters'
 	)
 	trainer.fit_loop()
