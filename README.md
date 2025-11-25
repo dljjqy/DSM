@@ -30,8 +30,7 @@ issn = {0021-9991},
 
 ## Tips
 
-This paper focuses on constructing deep surrogate models for solving reaction–diffusion problems.  
-The main difficulty in designing surrogate models lies in balancing accuracy and computational complexity.  
+This paper focuses on constructing deep surrogate models for solving reaction–diffusion problems.   
 It is easy to observe that when training neural networks using traditional numerical schemes, the following inequality holds:
 $$
 \|u - u_\theta \| \leq \|u - u^h\| + \|u^h - u_\theta\|,
