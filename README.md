@@ -1,7 +1,7 @@
 # A novel deep convolutional surrogate model with incomplete solve loss for parameterized steady-state diffusion problems
 
 Code repository for the paper:
-[A novel deep convolutional surrogate model with incomplete solve loss for parameterized steady-state diffusion problems](https://doi.org/10.1016/j.jcp.2025.114132) (Journal of Computational Physics 2025, volume 537, pages 114132).
+[A novel deep convolutional surrogate model with incomplete solve loss for parameterized steady-state diffusion problems](https://doi.org/10.1016/j.jcp.2025.114132) (Journal of Computational Physics, volume 537; 114132, 2025).
 
 ## Usage
 
